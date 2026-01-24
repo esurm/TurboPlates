@@ -24,7 +24,7 @@ Lightweight nameplate addon, built from scratch for WoW 3.3.5a (w/ Ascension API
 ## Installation
 
 1. Download and extract to `Interface\AddOns\TurboPlates`
-2. Restart the game or reload UI
+2. Restart the game
 
 ## Usage
 
