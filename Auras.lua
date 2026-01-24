@@ -22,8 +22,6 @@ local AuraUtil = AuraUtil
 local sort = table.sort
 local strsub = string.sub
 local PixelUtil = PixelUtil
-
--- Ascension API (may or may not exist)
 local C_Hook = C_Hook
 
 -- =============================================================================
@@ -1262,3 +1260,4 @@ initFrame:SetScript("OnEvent", function(self, event)
         pendingPositionTimer = nil
     end
 end)
+
