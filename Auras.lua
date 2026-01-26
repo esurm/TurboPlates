@@ -22,6 +22,8 @@ local AuraUtil = AuraUtil
 local sort = table.sort
 local strsub = string.sub
 local PixelUtil = PixelUtil
+
+-- Ascension API (may or may not exist)
 local C_Hook = C_Hook
 
 -- =============================================================================
@@ -299,7 +301,7 @@ end
 -- =============================================================================
 -- ICON FRAME POOL
 -- =============================================================================
-local MAX_POOL_SIZE = 50  -- Prevent unbounded pool growth
+local MAX_POOL_SIZE = 120  -- Support 10+ mobs with 6+ auras each without mid-combat frame creation
 
 local AuraPool = {
     inactive = {},    -- Stack of released icons ready for reuse
@@ -322,6 +324,7 @@ function AuraPool:Release(icon)
     icon.spellID = nil
     icon.expires = nil
     icon.elapsed = nil
+    icon._hasOnUpdate = nil
     tinsert(self.inactive, icon)
 end
 
@@ -715,19 +718,13 @@ end
 -- POSITION ICONS (Layout with grow direction)
 -- LEFT = grow right, RIGHT = grow left, CENTER = grow outward
 -- Icons anchor from BOTTOM edge so height grows upward
--- iconWidth is the inner icon frame width; border adds 1px outside each side
--- effectiveSpacing accounts for border overlap
 -- =============================================================================
 local function PositionIcons(container, count, iconWidth, spacing, growDir)
     if count == 0 then return end
     
-    -- Borders extend 1px outside each icon, so adjacent borders overlap by 2px
-    -- To get desired visual spacing, add 2 for the overlapping border pixels
-    local outerWidth = iconWidth + (BORDER_SIZE * 2)  -- Total visual width per icon
-    local effectiveSpacing = spacing  -- This is the gap between outer edges
-    local step = outerWidth + effectiveSpacing  -- Distance between icon centers
-    
-    local totalWidth = (count * outerWidth) + ((count - 1) * effectiveSpacing)
+    local outerWidth = iconWidth + (BORDER_SIZE * 2)
+    local step = outerWidth + spacing
+    local totalWidth = (count * outerWidth) + ((count - 1) * spacing)
     
     for i = 1, count do
         local icon = container.icons[i]
@@ -735,17 +732,12 @@ local function PositionIcons(container, count, iconWidth, spacing, growDir)
             icon:ClearAllPoints()
             
             if growDir == "CENTER" then
-                -- Center-aligned horizontally, anchored at BOTTOM
                 local xOffset = (i - 1) * step - (totalWidth / 2) + (outerWidth / 2)
                 icon:SetPoint("BOTTOM", container, "BOTTOM", xOffset, 0)
-                
             elseif growDir == "LEFT" then
-                -- Anchor BOTTOMLEFT edge, grow towards RIGHT
                 local xOffset = (i - 1) * step
                 icon:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", xOffset, 0)
-                
             elseif growDir == "RIGHT" then
-                -- Anchor BOTTOMRIGHT edge, grow towards LEFT
                 local xOffset = -((i - 1) * step)
                 icon:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", xOffset, 0)
             end
@@ -756,17 +748,24 @@ end
 -- =============================================================================
 -- DISPLAY AURAS (Show filtered, sorted auras on container)
 -- isPersonal: true if displaying on personal bar (affects buff border colors)
+-- Simple release-all-then-acquire pattern for correctness.
+-- Performance comes from large pool (no frame creation mid-combat) and timer throttling.
 -- =============================================================================
 local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, spacing, growDir, fontSize, stackFontSize, durationAnchor, stackAnchor, isPersonal)
-    -- Release existing icons back to pool
-    AuraPool:ReleaseAll(container)
     container.icons = container.icons or {}
+    local icons = container.icons
     
-    -- Get anchor positions (duration inside, stacks outside)
+    -- Get anchor positions
     local durAnchor = DURATION_ANCHORS[durationAnchor] or DURATION_ANCHORS.BOTTOM
     local stkAnchor = STACK_ANCHORS[stackAnchor] or STACK_ANCHORS.TOPRIGHT
     
-    -- Show new icons
+    -- Release all current icons back to pool
+    for i = #icons, 1, -1 do
+        AuraPool:Release(icons[i])
+        icons[i] = nil
+    end
+    
+    -- Acquire and configure icons for current auras
     local count = 0
     for i = 1, #auras do
         if count >= maxCount then break end
@@ -774,45 +773,31 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
         count = count + 1
         
         local icon = AuraPool:Acquire(container)
+        icons[count] = icon
         
-        -- Size caching
-        if icon._lastWidth ~= iconWidth or icon._lastHeight ~= iconHeight then
-            icon:SetSize(iconWidth, iconHeight)
-            icon._lastWidth = iconWidth
-            icon._lastHeight = iconHeight
-        end
+        -- Size
+        icon:SetSize(iconWidth, iconHeight)
         
-        -- Set texture (using cached icon)
+        -- Texture
         icon.texture:SetTexture(GetCachedIcon(aura.spellID, aura.icon))
+        icon.spellID = aura.spellID
         
-        -- Update font size only if changed
-        if icon._lastDurFontSize ~= fontSize then
-            icon.duration:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
-            icon._lastDurFontSize = fontSize
-        end
-        if icon._lastStackFontSize ~= stackFontSize then
-            icon.count:SetFont(STANDARD_TEXT_FONT, stackFontSize, "OUTLINE")
-            icon._lastStackFontSize = stackFontSize
-        end
-        
-        -- Position duration text (cached)
-        if icon._lastDurAnchor ~= durationAnchor then
-            icon.duration:ClearAllPoints()
-            icon.duration:SetPoint(durAnchor[1], icon, durAnchor[2], durAnchor[3], durAnchor[4])
-            icon._lastDurAnchor = durationAnchor
-        end
-        
-        -- Position stack count (cached)
-        if icon._lastStkAnchor ~= stackAnchor then
-            icon.count:ClearAllPoints()
-            icon.count:SetPoint(stkAnchor[1], icon, stkAnchor[2], stkAnchor[3], stkAnchor[4])
-            icon._lastStkAnchor = stackAnchor
-        end
-        
-        -- Set border color by type (pass isDebuff and isPersonal for proper coloring)
+        -- Border color
         SetBorderColor(icon, aura.debuffType, aura.canStealOrPurge, aura.isDebuff, isPersonal)
         
-        -- Set stack count
+        -- Font sizes
+        icon.duration:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
+        icon.count:SetFont(STANDARD_TEXT_FONT, stackFontSize, "OUTLINE")
+        
+        -- Duration text position
+        icon.duration:ClearAllPoints()
+        icon.duration:SetPoint(durAnchor[1], icon, durAnchor[2], durAnchor[3], durAnchor[4])
+        
+        -- Stack count position
+        icon.count:ClearAllPoints()
+        icon.count:SetPoint(stkAnchor[1], icon, stkAnchor[2], stkAnchor[3], stkAnchor[4])
+        
+        -- Stack count text
         if aura.count > 1 then
             icon.count:SetText(aura.count)
             icon.count:Show()
@@ -820,29 +805,27 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
             icon.count:Hide()
         end
         
-        -- Set duration tracking
-        icon.spellID = aura.spellID
+        -- Duration/timer setup
         icon.expires = aura.expires
         icon.elapsed = 0
         
         if aura.expires > 0 then
             icon:SetScript("OnUpdate", AuraTimerOnUpdate)
+            icon._hasOnUpdate = true
             UpdateDurationText(icon)
             icon.duration:Show()
         else
             icon.duration:SetText("")
             icon.duration:Hide()
-            icon:SetScript("OnUpdate", nil)
         end
         
-        container.icons[count] = icon
         icon:Show()
     end
     
-    -- Store actual displayed count for positioning logic
+    -- Store displayed count
     container.displayedCount = count
     
-    -- Position icons (use width for horizontal layout)
+    -- Position all icons
     PositionIcons(container, count, iconWidth, spacing, growDir)
 end
 
@@ -1260,4 +1243,3 @@ initFrame:SetScript("OnEvent", function(self, event)
         pendingPositionTimer = nil
     end
 end)
-

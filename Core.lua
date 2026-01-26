@@ -749,6 +749,9 @@ end
 
 -- Hide frames when nameplate removed (frames are reused)
 local function OnNamePlateRemoved(_, unit, nameplate)
+    if not nameplate and unit then
+        nameplate = GetNamePlateForUnit(unit)
+    end
     if unit then
         -- Clean up castbar BEFORE clearing unit mapping (so lookup works)
         if ns.CleanupCastbar then
@@ -1138,8 +1141,8 @@ local nameplateEventFallback = CreateFrame("Frame")
 nameplateEventFallback:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 nameplateEventFallback:SetScript("OnEvent", function(_, _, unit)
     local nameplate = GetNamePlateForUnit(unit)
-    if nameplate and nameplate.myPlate and nameplate.myPlate:IsShown() then
-        nameplate.myPlate:Hide()
+    if nameplate then
+        OnNamePlateRemoved(nil, unit, nameplate)
     end
 end)
 

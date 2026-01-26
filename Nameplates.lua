@@ -1944,7 +1944,7 @@ local function EnsureCastbar(myPlate)
             end
             
             if showIcon then
-                PixelUtil.SetPoint(myPlate.castbar, "TOPRIGHT", myPlate.hp, "BOTTOMRIGHT", 0, -2, 1, 1)
+                PixelUtil.SetPoint(myPlate.castbar, "TOPLEFT", myPlate.hp, "BOTTOMLEFT", iconSize + 2, -2, 1, 1)
                 -- Position and size icon
                 if myPlate.castbar.icon then
                     PixelUtil.SetSize(myPlate.castbar.icon, iconSize, iconSize, 1, 1)
@@ -3102,7 +3102,7 @@ function ns:UpdatePlateStyle(myPlate)
             end
             
             if showIcon then
-                PixelUtil.SetPoint(myPlate.castbar, "TOPRIGHT", myPlate.hp, "BOTTOMRIGHT", 0, -2, 1, 1)
+                PixelUtil.SetPoint(myPlate.castbar, "TOPLEFT", myPlate.hp, "BOTTOMLEFT", iconSize + 2, -2, 1, 1)
             else
                 PixelUtil.SetPoint(myPlate.castbar, "TOP", myPlate.hp, "BOTTOM", 0, -2, 1, 1)
             end
@@ -5322,7 +5322,8 @@ function ns:FullPlateUpdate(myPlate, unit)
         if myPlate.castbar then
             myPlate.castbar:ClearAllPoints()
             if ns.c_showCastIcon then
-                PixelUtil.SetPoint(myPlate.castbar, "TOPRIGHT", myPlate.hp, "BOTTOMRIGHT", 0, -2, 1, 1)
+                local iconSize = ns.c_castHeight
+                PixelUtil.SetPoint(myPlate.castbar, "TOPLEFT", myPlate.hp, "BOTTOMLEFT", iconSize + 2, -2, 1, 1)
             else
                 PixelUtil.SetPoint(myPlate.castbar, "TOP", myPlate.hp, "BOTTOM", 0, -2, 1, 1)
             end
@@ -5755,7 +5756,7 @@ eventFrame:SetScript("OnEvent", function(self, event, unit)
                     -- Update lite plate raid icon
                     local raidIndex = GetRaidTargetIndex(unit)
                     if raidIndex then
-                        nameplate.liteRaidIcon:SetSize(ns.cachedRaidMarkerSize, ns.cachedRaidMarkerSize)
+                        nameplate.liteRaidIcon:SetSize(ns.c_raidMarkerSize, ns.c_raidMarkerSize)
                         nameplate.liteRaidIcon:ClearAllPoints()
                         nameplate.liteRaidIcon:SetPoint("BOTTOM", nameplate.liteNameText, "TOP", 0, 2)
                         SetRaidTargetIconTexture(nameplate.liteRaidIcon, raidIndex)

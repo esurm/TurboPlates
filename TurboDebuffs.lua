@@ -963,8 +963,11 @@ local function UpdateTurboDebuff(myPlate, unit)
             frame.cachedAnchorFrame = anchorFrame
         end
         
-        -- Update icon
-        frame.icon:SetTexture(icon)
+        -- Update icon (cached to avoid redundant SetTexture calls)
+        if frame.cachedSpellId ~= spellId then
+            frame.icon:SetTexture(icon)
+            frame.cachedSpellId = spellId
+        end
         
         -- Update timer
         if duration and duration > 0.2 then
@@ -981,6 +984,7 @@ local function UpdateTurboDebuff(myPlate, unit)
         -- Clear timer state before hiding
         frame.timer:SetText("")
         frame.lastTimerText = nil
+        frame.cachedSpellId = nil
         frame:Hide()
     end
 end
@@ -1010,6 +1014,7 @@ function ns:HideTurboDebuff(myPlate)
         myPlate.turboDebuff.expirationTime = nil
         myPlate.turboDebuff.spellID = nil
         myPlate.turboDebuff.duration = nil
+        myPlate.turboDebuff.cachedSpellId = nil
         myPlate.turboDebuff:Hide()
     end
 end
@@ -1087,8 +1092,11 @@ local function UpdateLiteTurboDebuff(nameplate, unit)
             frame.cachedAnchorFrame = anchorFrame
         end
         
-        -- Update icon
-        frame.icon:SetTexture(icon)
+        -- Update icon (cached to avoid redundant SetTexture calls)
+        if frame.cachedSpellId ~= spellId then
+            frame.icon:SetTexture(icon)
+            frame.cachedSpellId = spellId
+        end
         
         -- Update timer
         if duration and duration > 0.2 then
@@ -1104,6 +1112,7 @@ local function UpdateLiteTurboDebuff(nameplate, unit)
     else
         frame.timer:SetText("")
         frame.lastTimerText = nil
+        frame.cachedSpellId = nil
         frame:Hide()
     end
 end
@@ -1121,6 +1130,7 @@ function ns:HideLiteTurboDebuff(nameplate)
         nameplate.liteTurboDebuff.expirationTime = nil
         nameplate.liteTurboDebuff.spellID = nil
         nameplate.liteTurboDebuff.duration = nil
+        nameplate.liteTurboDebuff.cachedSpellId = nil
         nameplate.liteTurboDebuff:Hide()
     end
 end
