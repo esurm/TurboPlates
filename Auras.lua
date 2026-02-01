@@ -476,18 +476,20 @@ function ns:CacheAuraSettings()
     ns.c_debuffIconHeight = auras.debuffIconHeight or 20
     ns.c_debuffFontSize = auras.debuffFontSize or 10
     ns.c_debuffStackFontSize = auras.debuffStackFontSize or 10
+    ns.c_debuffXOffset = auras.debuffXOffset or 0
     ns.c_debuffYOffset = auras.debuffYOffset or 0
     ns.c_debuffDurationAnchor = auras.debuffDurationAnchor or "BOTTOM"
     ns.c_debuffStackAnchor = auras.debuffStackAnchor or "TOPRIGHT"
     
     -- Buffs
+    ns.c_showBuffs = auras.showBuffs ~= false
     ns.c_buffFilterMode = auras.buffFilterMode or "ONLY_DISPELLABLE"
-    ns.c_showBuffs = ns.c_buffFilterMode ~= "DISABLED"
     ns.c_maxBuffs = auras.maxBuffs or 4
     ns.c_buffIconWidth = auras.buffIconWidth or 18
     ns.c_buffIconHeight = auras.buffIconHeight or 18
     ns.c_buffFontSize = auras.buffFontSize or 10
     ns.c_buffStackFontSize = auras.buffStackFontSize or 10
+    ns.c_buffXOffset = auras.buffXOffset or 0
     ns.c_buffYOffset = auras.buffYOffset or 0
     ns.c_buffGrowDirection = auras.buffGrowDirection or "CENTER"
     ns.c_buffDurationAnchor = auras.buffDurationAnchor or "BOTTOM"
@@ -1042,17 +1044,19 @@ function ns:UpdateAuraPositions(myPlate)
         
         -- Position debuff container
         myPlate.debuffContainer:ClearAllPoints()
+        local debuffX = ns.c_personalDebuffXOffset or 0
         local debuffY = (ns.c_personalDebuffYOffset or 0) + anchorOffset + BORDER_SIZE
-        myPlate.debuffContainer:SetPoint("BOTTOM", hpBar, "TOP", 0, debuffY)
+        myPlate.debuffContainer:SetPoint("BOTTOM", hpBar, "TOP", debuffX, debuffY)
         
         -- Position buff container above debuffs
         myPlate.buffContainer:ClearAllPoints()
         local debuffIconCount = myPlate.debuffContainer.displayedCount or 0
+        local buffX = ns.c_personalBuffXOffset or 0
         local buffY = (ns.c_personalBuffYOffset or 0) + anchorOffset + BORDER_SIZE
         if debuffIconCount > 0 and ns.c_personalShowDebuffs then
             buffY = buffY + (ns.c_debuffIconHeight or 20) + 4
         end
-        myPlate.buffContainer:SetPoint("BOTTOM", hpBar, "TOP", 0, buffY)
+        myPlate.buffContainer:SetPoint("BOTTOM", hpBar, "TOP", buffX, buffY)
         
         -- Update personal bar border based on debuff status
         if ns.UpdatePersonalBorder then
@@ -1103,22 +1107,24 @@ function ns:UpdateAuraPositions(myPlate)
     myPlate.debuffContainer:ClearAllPoints()
     local debuffGrowDir = ns.c_growDirection or "CENTER"
     -- Add BORDER_SIZE since the icon frame includes border padding
-    -- Use fallback defaults (0) for YOffset in case cache isn't initialized yet
+    -- Use fallback defaults (0) for XOffset/YOffset in case cache isn't initialized yet
+    local debuffX = ns.c_debuffXOffset or 0
     local debuffY = (ns.c_debuffYOffset or 0) + nameHeightOffset + BORDER_SIZE
     
     if debuffGrowDir == "LEFT" then
-        myPlate.debuffContainer:SetPoint("BOTTOMLEFT", hpBar, "TOPLEFT", 0, debuffY)
+        myPlate.debuffContainer:SetPoint("BOTTOMLEFT", hpBar, "TOPLEFT", debuffX, debuffY)
     elseif debuffGrowDir == "RIGHT" then
-        myPlate.debuffContainer:SetPoint("BOTTOMRIGHT", hpBar, "TOPRIGHT", 0, debuffY)
+        myPlate.debuffContainer:SetPoint("BOTTOMRIGHT", hpBar, "TOPRIGHT", debuffX, debuffY)
     else
-        myPlate.debuffContainer:SetPoint("BOTTOM", hpBar, "TOP", 0, debuffY)
+        myPlate.debuffContainer:SetPoint("BOTTOM", hpBar, "TOP", debuffX, debuffY)
     end
     
     -- Position buff container above debuffs (if visible) or at same level
     myPlate.buffContainer:ClearAllPoints()
     local debuffIconCount = myPlate.debuffContainer.displayedCount or 0
     -- Add BORDER_SIZE for buff positioning as well
-    -- Use fallback defaults (0) for YOffset in case cache isn't initialized yet
+    -- Use fallback defaults (0) for XOffset/YOffset in case cache isn't initialized yet
+    local buffX = ns.c_buffXOffset or 0
     local buffY = (ns.c_buffYOffset or 0) + nameHeightOffset + BORDER_SIZE
     
     if debuffIconCount > 0 and ns.c_showDebuffs then
@@ -1128,11 +1134,11 @@ function ns:UpdateAuraPositions(myPlate)
     
     local buffGrowDir = ns.c_buffGrowDirection or "CENTER"
     if buffGrowDir == "LEFT" then
-        myPlate.buffContainer:SetPoint("BOTTOMLEFT", hpBar, "TOPLEFT", 0, buffY)
+        myPlate.buffContainer:SetPoint("BOTTOMLEFT", hpBar, "TOPLEFT", buffX, buffY)
     elseif buffGrowDir == "RIGHT" then
-        myPlate.buffContainer:SetPoint("BOTTOMRIGHT", hpBar, "TOPRIGHT", 0, buffY)
+        myPlate.buffContainer:SetPoint("BOTTOMRIGHT", hpBar, "TOPRIGHT", buffX, buffY)
     else
-        myPlate.buffContainer:SetPoint("BOTTOM", hpBar, "TOP", 0, buffY)
+        myPlate.buffContainer:SetPoint("BOTTOM", hpBar, "TOP", buffX, buffY)
     end
 end
 

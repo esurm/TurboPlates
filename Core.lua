@@ -49,11 +49,14 @@ local UnitClass = UnitClass
 local UnitIsPlayer = UnitIsPlayer
 local UnitIsFriend = UnitIsFriend
 local UnitIsPet = UnitIsPet
+local UnitPlayerControlled = UnitPlayerControlled
 local UnitCreatureType = UnitCreatureType
+local UnitGUID = UnitGUID
 local GetTime = GetTime
 local GetRaidTargetIndex = GetRaidTargetIndex
 local SetRaidTargetIconTexture = SetRaidTargetIconTexture
 local GetGuildInfo = GetGuildInfo
+local GetCVarBool = GetCVarBool
 local IsInGroup = IsInGroup
 local GetNumGroupMembers = GetNumGroupMembers
 local InCombatLockdown = InCombatLockdown
@@ -61,6 +64,7 @@ local CreateFrame = CreateFrame
 local wipe = wipe
 local pairs = pairs
 local tinsert = tinsert
+local strlower = string.lower
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 local C_NamePlateManager = C_NamePlateManager
 local C_NamePlate = C_NamePlate
@@ -221,12 +225,145 @@ local GetNamePlateForUnit = C_NamePlate.GetNamePlateForUnit
 local Core = CreateFrame("Frame")
 Core:RegisterEvent("PLAYER_LOGIN")
 Core:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Combat ends - finish deferred DisableBlizzPlate calls
-Core:RegisterEvent("PLAYER_REGEN_DISABLED") -- Combat starts - enable click-through on liteplates
+Core:RegisterEvent("PLAYER_LEVEL_UP")  -- Refresh level text when player levels up
+
 
 ns.Core = Core
 ns.unitToPlate = {}     -- [unit] = myPlate (used for fast unit->plate lookups)
 ns.GuildDisplayCache = {} -- [guildName] = "<GuildName>" (cached formatted strings)
 ns.deferredDisable = {} -- Nameplates that need DisableBlizzPlate called after combat
+
+local npcTitleTooltip
+local npcTitleQueue = {}        -- [npcID] = unit
+local npcTitleQueueGUID = {}    -- [npcID] = guid
+local npcTitleQueueOrder = {}   -- [i] = npcID (FIFO)
+local npcTitleQueueIndex = 1
+local npcTitleQueueTimer
+
+local function GetNPCIDForUnit(unit)
+    local guid = unit and UnitGUID(unit)
+    if not guid then return nil end
+
+    if GetCreatureIDFromGUID then
+        local id = GetCreatureIDFromGUID(guid)
+        if id and id > 0 then
+            return id
+        end
+    end
+
+    if type(guid) == "string" and #guid >= 12 then
+        local id = tonumber(guid:sub(6, 12), 16)
+        if id and id > 0 then
+            return id
+        end
+    end
+end
+
+local function EnsureNPCTitleTooltip()
+    if npcTitleTooltip then
+        return npcTitleTooltip
+    end
+    npcTitleTooltip = CreateFrame("GameTooltip", "TurboPlatesNPCTitleScanTooltip", UIParent, "GameTooltipTemplate")
+    npcTitleTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    return npcTitleTooltip
+end
+
+local function ScanNPCTitle(unit)
+    local tip = EnsureNPCTitleTooltip()
+    tip:ClearLines()
+    tip:SetOwner(UIParent, "ANCHOR_NONE")
+    tip:SetUnit(unit)
+
+    local lineIndex = 2
+    if GetCVarBool and GetCVarBool("colorblindMode") then
+        lineIndex = 3
+    end
+
+    local line = _G["TurboPlatesNPCTitleScanTooltipTextLeft" .. lineIndex]
+    local text = line and line:GetText() or nil
+    tip:Hide()
+
+    if not text or text == "" then
+        return nil
+    end
+
+    local levelToken = LEVEL and strlower(LEVEL) or "level"
+    if strlower(text):find(levelToken, 1, true) then
+        return nil
+    end
+
+    return text
+end
+
+local function ProcessNPCTitleQueue()
+    npcTitleQueueTimer = nil
+
+    if InCombatLockdown() then
+        return
+    end
+
+    local cache = ns.c_npcTitleCache
+    if not cache then
+        return
+    end
+
+    local maxIndex = #npcTitleQueueOrder
+    if npcTitleQueueIndex > maxIndex then
+        wipe(npcTitleQueueOrder)
+        npcTitleQueueIndex = 1
+        return
+    end
+
+    local scansThisTick = 0
+    while scansThisTick < 2 and npcTitleQueueIndex <= maxIndex do
+        local npcID = npcTitleQueueOrder[npcTitleQueueIndex]
+        npcTitleQueueIndex = npcTitleQueueIndex + 1
+        if npcID then
+            local unit = npcTitleQueue[npcID]
+            local guid = npcTitleQueueGUID[npcID]
+            npcTitleQueue[npcID] = nil
+            npcTitleQueueGUID[npcID] = nil
+
+            if unit and guid and not cache[npcID] and UnitExists(unit) and UnitGUID(unit) == guid and (not UnitIsPlayer(unit)) and (not UnitPlayerControlled(unit)) then
+                local title = ScanNPCTitle(unit)
+                if title and title ~= "" then
+                    cache[npcID] = title
+                end
+            end
+        end
+        scansThisTick = scansThisTick + 1
+    end
+
+    if npcTitleQueueIndex <= #npcTitleQueueOrder then
+        npcTitleQueueTimer = true
+        C_Timer.After(0.05, ProcessNPCTitleQueue)
+    else
+        wipe(npcTitleQueueOrder)
+        npcTitleQueueIndex = 1
+    end
+end
+
+local function QueueNPCTitleScan(npcID, unit)
+    if not npcID or npcID == 0 then
+        return
+    end
+    local cache = ns.c_npcTitleCache
+    if cache and cache[npcID] then
+        return
+    end
+    if npcTitleQueue[npcID] then
+        return
+    end
+
+    npcTitleQueue[npcID] = unit
+    npcTitleQueueGUID[npcID] = UnitGUID(unit)
+    tinsert(npcTitleQueueOrder, npcID)
+
+    if not npcTitleQueueTimer and not InCombatLockdown() then
+        npcTitleQueueTimer = true
+        C_Timer.After(0.05, ProcessNPCTitleQueue)
+    end
+end
 
 local ARENA_UNITS = {"arena1", "arena2", "arena3", "arena4", "arena5"}
 
@@ -385,21 +522,23 @@ Core:SetScript("OnEvent", function(self, event, ...)
             end
         end
         wipe(ns.deferredDisable)
-        
-        -- Disable mouse on liteplates (restore click-through state)
-        if ns.c_friendlyClickThrough then
-            for nameplate in C_NamePlateManager.EnumerateActiveNamePlates() do
-                if nameplate.liteContainer and nameplate.liteContainer:IsShown() then
-                    nameplate.liteContainer:EnableMouse(false)
-                end
-            end
+
+        -- Resume NPC title scans (cached titles remain visible in combat)
+        if not npcTitleQueueTimer and npcTitleQueueOrder[1] and not InCombatLockdown() then
+            npcTitleQueueTimer = true
+            C_Timer.After(0.05, ProcessNPCTitleQueue)
         end
-    elseif event == "PLAYER_REGEN_DISABLED" then
-        -- Combat started - enable clicking on liteplates
-        if ns.c_friendlyClickThrough then
-            for nameplate in C_NamePlateManager.EnumerateActiveNamePlates() do
-                if nameplate.liteContainer and nameplate.liteContainer:IsShown() then
-                    nameplate.liteContainer:EnableMouse(true)
+    elseif event == "PLAYER_LEVEL_UP" then
+        -- Player leveled up - update cached level and refresh all nameplate level text
+        local newLevel = ...
+        ns.c_playerLevel = newLevel or UnitLevel("player")
+        
+        -- Refresh all visible nameplates to update level display
+        for unit, myPlate in pairs(ns.unitToPlate) do
+            if myPlate and myPlate.levelText then
+                myPlate.levelText._lastLevel = nil  -- Force refresh
+                if ns.UpdateLevelText then
+                    ns.UpdateLevelText(unit)
                 end
             end
         end
@@ -411,7 +550,6 @@ end)
 local function SetupLiteContainer(container, nameplate)
     local defaultFont = "Fonts\\FRIZQT__.TTF"
     
-    -- Start with mouse disabled; combat events toggle click-through
     container:EnableMouse(false)
     
     local txt = container:CreateFontString(nil, "OVERLAY")
@@ -440,6 +578,30 @@ local function SetupLiteContainer(container, nameplate)
     levelText:SetJustifyV("MIDDLE")
     levelText:Hide()
     container.liteLevelText = levelText
+    
+    -- Lite health bar (shown when damaged)
+    local hpWidth = math.floor((ns.c_width or 110) / 2)
+    local hpHeight = math.floor((ns.c_hpHeight or 12) / 2)
+    local liteHP = CreateFrame("StatusBar", nil, container)
+    PixelUtil.SetSize(liteHP, hpWidth, hpHeight, 1, 1)
+    PixelUtil.SetPoint(liteHP, "TOP", txt, "BOTTOM", 0, -2, 1, 1)
+    liteHP:SetStatusBarTexture(ns.c_texture or "Interface\\RaidFrame\\Raid-Bar-Hp-Fill")
+    liteHP:SetStatusBarColor(0, 1, 0)
+    liteHP:Hide()
+    container.liteHealthBar = liteHP
+    
+    -- Lite health bar background
+    local liteHPBG = liteHP:CreateTexture(nil, "BACKGROUND")
+    liteHPBG:SetAllPoints()
+    liteHPBG:SetColorTexture(0, 0, 0, 0.7)
+    
+    -- Lite health text (percent)
+    local liteHPText = liteHP:CreateFontString(nil, "OVERLAY")
+    local fontSize = math.max(7, math.floor((ns.c_fontSize or 9) * 0.9))
+    liteHPText:SetFont(ns.c_font or defaultFont, fontSize, "OUTLINE")
+    liteHPText:SetPoint("CENTER", liteHP, "CENTER", 0, 0)
+    liteHPText:SetTextColor(1, 1, 1)
+    container.liteHealthText = liteHPText
     
     container:SetParent(nameplate)
     container:SetAllPoints()
@@ -571,7 +733,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         txt:Show()
         
         -- Guild text for players (if enabled) - use cached guild
-        local showGuild = false
+        local showSubtitle = false
         if isPlayer and ns.c_friendlyGuild then
             local guildName = nameplate._cachedGuild
             if guildName == nil then  -- nil means not yet queried
@@ -581,7 +743,27 @@ local function OnNamePlateAdded(_, unit, nameplate)
             if guildName and guildName ~= false then
                 guild:SetText(GetGuildDisplayString(guildName))
                 guild:Show()
-                showGuild = true
+                showSubtitle = true
+            else
+                guild:Hide()
+            end
+        elseif (not isPlayer) and (not UnitPlayerControlled(unit)) then
+            local npcID = nameplate._cachedNPCID
+            if npcID == nil then
+                npcID = GetNPCIDForUnit(unit) or false
+                nameplate._cachedNPCID = npcID
+            end
+
+            if npcID and npcID ~= false then
+                local title = ns.c_npcTitleCache and ns.c_npcTitleCache[npcID]
+                if title and title ~= "" then
+                    guild:SetText("<" .. title .. ">")
+                    guild:Show()
+                    showSubtitle = true
+                else
+                    guild:Hide()
+                    QueueNPCTitleScan(npcID, unit)
+                end
             else
                 guild:Hide()
             end
@@ -591,7 +773,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         
         -- Reposition name text based on guild visibility
         -- When guild is shown, push name up so guild appears at the original center position
-        if showGuild then
+        if showSubtitle then
             local guildHeight = ns.c_guildFontSize + 1  -- font size + 1px gap
             if txt._guildOffset ~= guildHeight then
                 txt:ClearAllPoints()
@@ -602,6 +784,16 @@ local function OnNamePlateAdded(_, unit, nameplate)
             txt:ClearAllPoints()
             txt:SetPoint("CENTER", container, "CENTER", 0, 0)
             txt._guildOffset = nil
+        end
+
+        -- Reposition lite health bar based on guild visibility
+        if container.liteHealthBar then
+            local anchorKey = showSubtitle and "subtitle" or "name"
+            if container.liteHealthBar._lastAnchorKey ~= anchorKey then
+                container.liteHealthBar:ClearAllPoints()
+                PixelUtil.SetPoint(container.liteHealthBar, "TOP", showSubtitle and guild or txt, "BOTTOM", 0, -2, 1, 1)
+                container.liteHealthBar._lastAnchorKey = anchorKey
+            end
         end
         
         -- Update lite raid icon (initialize cache values for UpdateAllPlates)
@@ -671,11 +863,31 @@ local function OnNamePlateAdded(_, unit, nameplate)
             ns:UpdateLiteHealerIcon(container, unit)
         end
         
-        -- Enable click-through if in combat and setting is on
-        if ns.c_friendlyClickThrough and InCombatLockdown() then
-            container:EnableMouse(true)
-        else
-            container:EnableMouse(false)
+        -- Update lite health bar when damaged
+        if ns.c_liteHealthWhenDamaged and container.liteHealthBar then
+            local health = UnitHealth(unit)
+            local maxHealth = UnitHealthMax(unit)
+            if health < maxHealth and maxHealth > 0 then
+                local liteHP = container.liteHealthBar
+                liteHP:SetMinMaxValues(0, maxHealth)
+                liteHP:SetValue(health)
+                -- Update percent text
+                local pct = math.floor((health / maxHealth) * 100)
+                container.liteHealthText:SetText(pct .. "%")
+                -- Update color based on health percent (green to red gradient)
+                local r, g = 1, 1
+                if pct < 50 then
+                    r, g = 1, pct / 50
+                else
+                    r = (100 - pct) / 50
+                end
+                liteHP:SetStatusBarColor(r, g, 0)
+                liteHP:Show()
+            else
+                container.liteHealthBar:Hide()
+            end
+        elseif container.liteHealthBar then
+            container.liteHealthBar:Hide()
         end
         
         container:Show()
@@ -769,6 +981,7 @@ local function OnNamePlateRemoved(_, unit, nameplate)
         nameplate._cachedIsPlayer = nil
         nameplate._cachedClass = nil
         nameplate._cachedGuild = nil
+        nameplate._cachedNPCID = nil
         
         if nameplate.liteContainer then
             nameplate.liteContainer:Hide()
@@ -949,6 +1162,35 @@ function ns:UpdateAllPlates()
                     guild._lastSize = ns.c_guildFontSize
                     guild._lastOutline = ns.c_fontOutline
                 end
+
+                -- Lite damaged-HP refresh (size/texture/font)
+                if container.liteHealthBar then
+                    local hpWidth = math.floor((ns.c_width or 110) / 2)
+                    local hpHeight = math.floor((ns.c_hpHeight or 12) / 2)
+                    if container.liteHealthBar._lastW ~= hpWidth or container.liteHealthBar._lastH ~= hpHeight then
+                        PixelUtil.SetSize(container.liteHealthBar, hpWidth, hpHeight, 1, 1)
+                        container.liteHealthBar._lastW = hpWidth
+                        container.liteHealthBar._lastH = hpHeight
+                    end
+
+                    local texture = ns.c_texture or "Interface\\RaidFrame\\Raid-Bar-Hp-Fill"
+                    if container.liteHealthBar._lastTexture ~= texture and container.liteHealthBar.SetStatusBarTexture then
+                        container.liteHealthBar:SetStatusBarTexture(texture)
+                        container.liteHealthBar._lastTexture = texture
+                    end
+                end
+                if container.liteHealthText then
+                    local defaultFont = "Fonts\\FRIZQT__.TTF"
+                    local font = ns.c_font or defaultFont
+                    local fontSize = math.max(7, math.floor((ns.c_fontSize or 9) * 0.9))
+                    local outline = ns.c_fontOutline or "OUTLINE"
+                    if container.liteHealthText._lastFont ~= font or container.liteHealthText._lastSize ~= fontSize or container.liteHealthText._lastOutline ~= outline then
+                        container.liteHealthText:SetFont(font, fontSize, outline)
+                        container.liteHealthText._lastFont = font
+                        container.liteHealthText._lastSize = fontSize
+                        container.liteHealthText._lastOutline = outline
+                    end
+                end
                 
                 local name = UnitName(unit) or ""
                 local displayName = ns.FormatName and ns:FormatName(name) or name
@@ -967,14 +1209,34 @@ function ns:UpdateAllPlates()
                 end
                 
                 txt:Show()
-                
-                local showGuild = false
+
+                local showSubtitle = false
                 if isPlayer and ns.c_friendlyGuild then
                     local guildName = GetGuildInfo(unit)
                     if guildName then
                         guild:SetText(GetGuildDisplayString(guildName))
                         guild:Show()
-                        showGuild = true
+                        showSubtitle = true
+                    else
+                        guild:Hide()
+                    end
+                elseif (not isPlayer) and (not UnitPlayerControlled(unit)) then
+                    local npcID = nameplate._cachedNPCID
+                    if npcID == nil then
+                        npcID = GetNPCIDForUnit(unit) or false
+                        nameplate._cachedNPCID = npcID
+                    end
+
+                    if npcID and npcID ~= false then
+                        local title = ns.c_npcTitleCache and ns.c_npcTitleCache[npcID]
+                        if title and title ~= "" then
+                            guild:SetText("<" .. title .. ">")
+                            guild:Show()
+                            showSubtitle = true
+                        else
+                            guild:Hide()
+                            QueueNPCTitleScan(npcID, unit)
+                        end
                     else
                         guild:Hide()
                     end
@@ -983,7 +1245,7 @@ function ns:UpdateAllPlates()
                 end
                 
                 -- Reposition name text based on guild visibility
-                if showGuild then
+                if showSubtitle then
                     local guildHeight = ns.c_guildFontSize + 1
                     if txt._guildOffset ~= guildHeight then
                         txt:ClearAllPoints()
@@ -994,6 +1256,16 @@ function ns:UpdateAllPlates()
                     txt:ClearAllPoints()
                     txt:SetPoint("CENTER", container, "CENTER", 0, 0)
                     txt._guildOffset = nil
+                end
+
+                -- Reposition lite health bar based on guild visibility
+                if container.liteHealthBar then
+                    local anchorKey = showSubtitle and "subtitle" or "name"
+                    if container.liteHealthBar._lastAnchorKey ~= anchorKey then
+                        container.liteHealthBar:ClearAllPoints()
+                        PixelUtil.SetPoint(container.liteHealthBar, "TOP", showSubtitle and guild or txt, "BOTTOM", 0, -2, 1, 1)
+                        container.liteHealthBar._lastAnchorKey = anchorKey
+                    end
                 end
                 
                 local raidIndex = GetRaidTargetIndex(unit)
@@ -1064,11 +1336,29 @@ function ns:UpdateAllPlates()
                     ns:UpdateLiteTurboDebuff(nameplate, unit)
                 end
                 
-                -- Enable click-through if in combat and setting is on
-                if ns.c_friendlyClickThrough and InCombatLockdown() then
-                    container:EnableMouse(true)
-                else
-                    container:EnableMouse(false)
+                -- Update lite health bar when damaged
+                if ns.c_liteHealthWhenDamaged and container.liteHealthBar then
+                    local health = UnitHealth(unit)
+                    local maxHealth = UnitHealthMax(unit)
+                    if health < maxHealth and maxHealth > 0 then
+                        local liteHP = container.liteHealthBar
+                        liteHP:SetMinMaxValues(0, maxHealth)
+                        liteHP:SetValue(health)
+                        local pct = math.floor((health / maxHealth) * 100)
+                        container.liteHealthText:SetText(pct .. "%")
+                        local r, g = 1, 1
+                        if pct < 50 then
+                            r, g = 1, pct / 50
+                        else
+                            r = (100 - pct) / 50
+                        end
+                        liteHP:SetStatusBarColor(r, g, 0)
+                        liteHP:Show()
+                    else
+                        container.liteHealthBar:Hide()
+                    end
+                elseif container.liteHealthBar then
+                    container.liteHealthBar:Hide()
                 end
                 
                 container:Show()

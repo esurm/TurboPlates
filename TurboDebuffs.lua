@@ -943,7 +943,7 @@ local function UpdateTurboDebuff(myPlate, unit)
         end
         
         -- Position anchored to healthBar (cached to avoid redundant repositioning)
-        local anchorFrame = myPlate.healthBar or myPlate
+        local anchorFrame = myPlate.hp or myPlate
         if frame.cachedAnchor ~= anchor or frame.cachedXOff ~= xOff or frame.cachedYOff ~= yOff or frame.cachedAnchorFrame ~= anchorFrame then
             frame:ClearAllPoints()
             if anchor == "LEFT" then

@@ -374,10 +374,11 @@ function ns:UpdateDBCache()
     
     -- Friendly plate settings
     ns.c_friendlyNameOnly = db.friendlyNameOnly ~= false
-    ns.c_friendlyClickThrough = db.friendlyClickThrough ~= false  -- true by default
+    ns.c_liteHealthWhenDamaged = db.liteHealthWhenDamaged ~= false  -- true by default
     ns.c_friendlyGuild = db.friendlyGuild == true
     ns.c_friendlyFontSize = db.friendlyFontSize or 12
     ns.c_guildFontSize = db.guildFontSize or 10
+    ns.c_npcTitleCache = db.npcTitleCache or {}
     
     -- Combo point style (placeholder for future use)
     ns.c_cpStyle = db.cpStyle or 1
@@ -457,7 +458,9 @@ function ns:UpdateDBCache()
     ns.c_personalHeroPowerOrder = personal.heroPowerOrder or 1  -- HERO class power order
     ns.c_personalShowBuffs = personal.showBuffs ~= false
     ns.c_personalShowDebuffs = personal.showDebuffs ~= false
+    ns.c_personalBuffXOffset = personal.buffXOffset or 0
     ns.c_personalBuffYOffset = personal.buffYOffset or 0
+    ns.c_personalDebuffXOffset = personal.debuffXOffset or 0
     ns.c_personalDebuffYOffset = personal.debuffYOffset or 0
     ns.c_personalYOffset = personal.yOffset or 0
     ns.c_personalBorderStyle = personal.borderStyle or "removable"  -- removable, black, debuff, debuff_only, none
@@ -1407,6 +1410,21 @@ local function EnsureFullPlate(myPlate)
     targetGlow:EnableMouse(false)
     targetGlow:Hide()
     myPlate.targetGlow = targetGlow
+
+    -- Create target arrows (1 per side, mirrored via TexCoord)
+    local targetArrows = {
+        left = hp:CreateTexture(nil, "OVERLAY"),
+        right = hp:CreateTexture(nil, "OVERLAY"),
+    }
+    for _, tex in pairs(targetArrows) do
+        tex:SetBlendMode("ADD")
+        tex:Hide()
+    end
+    -- Left arrow: points right (towards bar) - normal
+    targetArrows.left:SetTexCoord(0, 1, 0, 1)
+    -- Right arrow: points left (towards bar) - flipped horizontally
+    targetArrows.right:SetTexCoord(1, 0, 0, 1)
+    myPlate.targetArrows = targetArrows
     
     -- Apply styles to new health bar (use PixelUtil for pixel-perfect dimensions)
     PixelUtil.SetWidth(hp, ns.c_width, 1)
@@ -2284,6 +2302,10 @@ local function UpdateTargetGlow(myPlate, isTarget)
     
     -- Hide all glow elements first
     if myPlate.targetGlow then myPlate.targetGlow:Hide() end
+    if myPlate.targetArrows then
+        myPlate.targetArrows.left:Hide()
+        myPlate.targetArrows.right:Hide()
+    end
     if myPlate.thickOutline then 
         myPlate.thickOutline:Hide()
         -- Hide both cached borders
@@ -2294,6 +2316,55 @@ local function UpdateTargetGlow(myPlate, isTarget)
     end
     
     if glowStyle == "none" or not isTarget then
+        return
+    end
+
+    -- Arrow styles share common logic
+    local arrowTextures = {
+        arrows_thin = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_thin_right_64.tga",
+        arrows_normal = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_single_right_64.tga",
+        arrows_double = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_double_right_64.tga",
+    }
+
+    if arrowTextures[glowStyle] then
+        local arrows = myPlate.targetArrows
+        local hp = myPlate.hp
+        if not arrows or not hp then
+            return
+        end
+
+        -- Set texture for both arrows
+        local texPath = arrowTextures[glowStyle]
+        arrows.left:SetTexture(texPath)
+        arrows.right:SetTexture(texPath)
+
+        -- Size scales with HP bar height
+        local effectiveScale = hp:GetEffectiveScale()
+        local hpHeight = ns.c_hpHeight or 8
+        local arrowHeight = PixelUtil.GetNearestPixelSize(hpHeight * 1.3, effectiveScale, 1)
+        local arrowWidth = PixelUtil.GetNearestPixelSize(arrowHeight * 1, effectiveScale, 1)
+
+        local sizeKey = glowStyle .. ":" .. arrowWidth .. ":" .. arrowHeight .. ":" .. hpHeight
+        if arrows._lastSizeKey ~= sizeKey then
+            PixelUtil.SetSize(arrows.left, arrowWidth, arrowHeight, 1, 1)
+            PixelUtil.SetSize(arrows.right, arrowWidth, arrowHeight, 1, 1)
+
+            arrows.left:ClearAllPoints()
+            arrows.right:ClearAllPoints()
+
+            -- Position arrows overlapping the bar edges
+            PixelUtil.SetPoint(arrows.right, "LEFT", hp, "RIGHT", -3, 0, 1, 1)
+            PixelUtil.SetPoint(arrows.left, "RIGHT", hp, "LEFT", 3, 0, 1, 1)
+
+            arrows._lastSizeKey = sizeKey
+        end
+
+        local r, g, b = ns.c_targetGlowColor_r, ns.c_targetGlowColor_g, ns.c_targetGlowColor_b
+        arrows.left:SetVertexColor(r, g, b, 0.9)
+        arrows.right:SetVertexColor(r, g, b, 0.9)
+
+        arrows.left:Show()
+        arrows.right:Show()
         return
     end
     
@@ -2399,6 +2470,10 @@ end
 function ns.ClearTargetGlow(myPlate)
     if not myPlate then return end
     if myPlate.targetGlow then myPlate.targetGlow:Hide() end
+    if myPlate.targetArrows then
+        myPlate.targetArrows.left:Hide()
+        myPlate.targetArrows.right:Hide()
+    end
     if myPlate.thickOutline then
         myPlate.thickOutline:Hide()
         if myPlate.thickOutline.borders then
@@ -4510,6 +4585,9 @@ local function UpdateLevelText(unit)
     levelText:Show()
 end
 
+-- Export for Core.lua (PLAYER_LEVEL_UP handler)
+ns.UpdateLevelText = UpdateLevelText
+
 -- Classification icon atlas textures
 local ClassificationAtlas = {
     rare = "warfront-alliancehero",
@@ -4644,8 +4722,8 @@ local GetQuestLogTitle = GetQuestLogTitle
 -- Cache string.isNilOrEmpty if available, otherwise provide fallback
 local stringIsNilOrEmpty = string.isNilOrEmpty or function(s) return s == nil or s == "" end
 
--- Cache API availability check (done once at load, won't change)
-local hasQuestAPI = C_QuestLog and C_QuestLog.GetUnitQuestInfo and true or false
+-- Quest icon retry timers
+local questRetryTimers = {}
 
 -- Update quest objective icon for a unit (full plates)
 -- Uses C_QuestLog.GetUnitQuestInfo and QuestUtil to get appropriate icon
@@ -4666,8 +4744,8 @@ local function UpdateQuestIcon(unit)
         return
     end
     
-    -- Check if API exists (cached at load time)
-    if not hasQuestAPI then
+    -- Check if API exists (recheck each call in case C_QuestLog loads late)
+    if not (C_QuestLog and C_QuestLog.GetUnitQuestInfo) then
         if myPlate.questIcon then myPlate.questIcon:Hide() end
         return
     end
@@ -4678,11 +4756,41 @@ local function UpdateQuestIcon(unit)
     
     -- No quest data for this unit
     if stringIsNilOrEmpty(talkToMe) and not questStatus then
+        -- Retry mechanism: if unit exists but API returned nil, schedule retry
+        if UnitExists(unit) and not questRetryTimers[unit] then
+            local token = {}
+            questRetryTimers[unit] = token
+            C_Timer_After(0.15, function()
+                if questRetryTimers[unit] ~= token then return end
+                questRetryTimers[unit] = nil
+                if UnitExists(unit) then
+                    UpdateQuestIcon(unit)
+                end
+            end)
+        end
         if myPlate.questIcon then myPlate.questIcon:Hide() end
         return
     end
     
-    -- Ascension dailies may bypass standard quest log, trust C_QuestLog.GetUnitQuestInfo
+    -- Cancel any pending retry for this unit
+    if questRetryTimers[unit] then
+        questRetryTimers[unit] = nil
+    end
+    
+    -- Validate quest is in log and not complete (mirror lite plate validation)
+    if questID and questID > 0 then
+        local questLogIndex = GetQuestLogIndexByID(questID)
+        if questLogIndex == 0 then
+            if myPlate.questIcon then myPlate.questIcon:Hide() end
+            return
+        else
+            local isComplete = select(7, GetQuestLogTitle(questLogIndex))
+            if isComplete then
+                if myPlate.questIcon then myPlate.questIcon:Hide() end
+                return
+            end
+        end
+    end
     
     local atlas, desaturate
     
@@ -4766,8 +4874,8 @@ local function UpdateLiteQuestIcon(nameplate, unit)
         return
     end
     
-    -- Check if API exists (cached at load time)
-    if not hasQuestAPI then
+    -- Check if API exists (recheck each call in case C_QuestLog loads late)
+    if not (C_QuestLog and C_QuestLog.GetUnitQuestInfo) then
         if nameplate.liteQuestIcon then nameplate.liteQuestIcon:Hide() end
         return
     end
@@ -4870,9 +4978,6 @@ end
 
 -- Update all quest icons (called on QUEST_LOG_UPDATE)
 local function UpdateAllQuestIcons()
-    -- Early exit if API doesn't exist (cached check)
-    if not hasQuestAPI then return end
-    
     -- Update full plates
     for unit, myPlate in pairs(ns.unitToPlate) do
         if myPlate and UnitExists(unit) then
@@ -5479,6 +5584,7 @@ eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 eventFrame:RegisterEvent("ARENA_OPPONENT_UPDATE")  -- Update arena name cache
 eventFrame:RegisterEvent("QUEST_LOG_UPDATE")       -- Quest log changed - update quest icons
 eventFrame:RegisterEvent("QUEST_QUERY_COMPLETE")   -- Quest query finished - update quest icons
+eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")  -- Nameplate appeared - check quest icon immediately
 eventFrame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")  -- Absorb shield changed
 eventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")        -- Incoming heals changed
 -- Power events (UNIT_MANA, UNIT_RAGE, UNIT_ENERGY, etc.) registered conditionally below
@@ -5774,6 +5880,17 @@ eventFrame:SetScript("OnEvent", function(self, event, unit)
         -- Quest data changed - throttle updates (quest log can fire rapidly)
         if not pendingTimers.quest then
             pendingTimers.quest = C_Timer_After(GetQuestThrottle(), ProcessQuestUpdate)
+        end
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+        -- Nameplate appeared - immediately check quest icon (handles API not ready on first frame)
+        if unit and ns.c_questIconsEnabled then
+            UpdateQuestIcon(unit)
+            -- Also schedule delayed check in case API wasn't ready
+            C_Timer_After(0.1, function()
+                if UnitExists(unit) then
+                    UpdateQuestIcon(unit)
+                end
+            end)
         end
     elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" then
         -- Absorb shield changed

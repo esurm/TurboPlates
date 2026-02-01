@@ -110,7 +110,8 @@ ns.L = {
     AurasDebuffHeight = "Debuff Icon Height",
     AurasDebuffFontSize = "Timer Font Size",
     AurasDebuffStackFontSize = "Stack Font Size",
-    AurasBuffFilterMode = "Buff Tracking",
+    AurasBuffFilterMode = "Buff Filter",
+    AurasShowBuffs = "Enable Buff Tracking",
     AurasBuffFilterOnlyDispellable = "Only Dispellable",
     AurasBuffFilterWhitelistDispellable = "Whitelist + Dispellable",
     AurasBuffFilterAll = "All (except Blacklisted)",
@@ -133,6 +134,7 @@ ns.L = {
     AurasSortMostRecent = "Most Recently Applied",
     AurasGrowDirection = "Debuff Display Anchor",
     AurasIconSpacing = "Icon Spacing",
+    AurasXOffset = "Horizontal Offset",
     AurasYOffset = "Vertical Offset",
     AurasAnchorLeft = "Left",
     AurasAnchorCenter = "Center",
@@ -192,8 +194,8 @@ ns.L = {
     ShowMinimap = "Minimap Button",
     FriendlyNameOnly = "Name-Only Mode",
     FriendlyNameOnlyTip = "Displays friendly players as lightweight name-only plates without health bars",
-    FriendlyClickThrough = "Combat Click-Through",
-    FriendlyClickThroughTip = "Prevents accidental targeting of friendly players in combat",
+    LiteHealthWhenDamaged = "Show HP When Damaged",
+    LiteHealthWhenDamagedTip = "Shows a compact health bar with percentage when friendly units are below 100% health",
     FriendlyGuild = "Show Guild Names",
     ExecuteRange = "Execute Threshold (%)",
 
@@ -398,6 +400,9 @@ ns.TargetGlowStyles = {
     { name = "Border Glow", value = "border" },
     { name = "Thick Outline", value = "thick" },
     { name = "Thin Outline", value = "thin" },
+    { name = "Arrow (Thin)", value = "arrows_thin" },
+    { name = "Arrow (Normal)", value = "arrows_normal" },
+    { name = "Arrow (Double)", value = "arrows_double" },
 }
 ns.TargetingMeStyles = {
     { name = "Disabled", value = "disabled" },
@@ -522,8 +527,9 @@ ns.defaults = {
     highlightGlowThickness = 2,    -- Line thickness
     highlightGlowColor = { r = 1, g = 0.3, b = 0.1 },  -- Orange glow color
     friendlyNameOnly = true,  -- Checked by default
-    friendlyClickThrough = true,  -- Block clicks on liteplates by default
+    liteHealthWhenDamaged = true,  -- Show compact HP bar when damaged
     friendlyGuild = false,
+    npcTitleCache = {},  -- [npcID] = title (cached via tooltip scan)
     classColoredHealth = true,  -- Use class colors for player health bars (friendly and hostile)
     classColoredName = false,   -- Use custom hostile name color (not class colored)
     arenaNumbers = false,       -- Replace enemy names with arena numbers in arena
@@ -590,7 +596,9 @@ ns.defaults = {
         heroPowerOrder = 1,  -- HERO class power bar order (1=Mana>Energy>Rage)
         showBuffs = true,
         showDebuffs = true,
+        buffXOffset = 0,
         buffYOffset = 0,
+        debuffXOffset = 0,
         debuffYOffset = 0,
         yOffset = 0,
         borderStyle = "removable",  -- removable, black, debuff, debuff_only, none
@@ -605,18 +613,21 @@ ns.defaults = {
         debuffIconHeight = 16,
         debuffFontSize = 12,
         debuffStackFontSize = 11,
+        debuffXOffset = 0,
         debuffYOffset = 0,
         debuffBorderMode = "COLOR_CODED",  -- DISABLED, COLOR_CODED, CUSTOM
         debuffDurationAnchor = "BOTTOM",  -- TOP, TOPLEFT, TOPRIGHT, CENTER, BOTTOM, BOTTOMLEFT, BOTTOMRIGHT
         debuffStackAnchor = "TOPLEFT",   -- TOP, TOPLEFT, TOPRIGHT, CENTER, BOTTOM, BOTTOMLEFT, BOTTOMRIGHT
         
         -- Buffs (Enemy buffs you can purge/steal)
-        buffFilterMode = "ONLY_DISPELLABLE",  -- ONLY_DISPELLABLE, WHITELIST_DISPELLABLE, ALL, DISABLED
+        showBuffs = true,
+        buffFilterMode = "ONLY_DISPELLABLE",  -- ONLY_DISPELLABLE, WHITELIST_DISPELLABLE, ALL
         maxBuffs = 4,
         buffIconWidth = 18,
         buffIconHeight = 18,
         buffFontSize = 10,
         buffStackFontSize = 10,
+        buffXOffset = 0,
         buffYOffset = 0,
         buffGrowDirection = "CENTER",  -- CENTER, LEFT, RIGHT
         buffDurationAnchor = "CENTER",  -- TOP, TOPLEFT, TOPRIGHT, CENTER, BOTTOM, BOTTOMLEFT, BOTTOMRIGHT

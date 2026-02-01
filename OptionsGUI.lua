@@ -2277,7 +2277,9 @@ local function CreatePreview(parent)
         local buffGrowDir = auras.buffGrowDirection or "CENTER"
         local debuffIconSpacing = auras.iconSpacing or 2
         local buffIconSpacing = auras.buffIconSpacing or 2
+        local debuffXOffset = auras.debuffXOffset or 0
         local debuffYOffset = auras.debuffYOffset or 0
+        local buffXOffset = auras.buffXOffset or 0
         local buffYOffset = auras.buffYOffset or 0
         
         -- Border mode settings
@@ -2427,11 +2429,11 @@ local function CreatePreview(parent)
         -- Add PREVIEW_BORDER_SIZE since the icon frame includes border padding
         local debuffY = debuffYOffset + nameHeightOffset + PREVIEW_BORDER_SIZE
         if debuffGrowDir == "LEFT" then
-            debuffContainer:SetPoint("BOTTOMLEFT", hp, "TOPLEFT", 0, debuffY)
+            debuffContainer:SetPoint("BOTTOMLEFT", hp, "TOPLEFT", debuffXOffset, debuffY)
         elseif debuffGrowDir == "RIGHT" then
-            debuffContainer:SetPoint("BOTTOMRIGHT", hp, "TOPRIGHT", 0, debuffY)
+            debuffContainer:SetPoint("BOTTOMRIGHT", hp, "TOPRIGHT", debuffXOffset, debuffY)
         else
-            debuffContainer:SetPoint("BOTTOM", hp, "TOP", 0, debuffY)
+            debuffContainer:SetPoint("BOTTOM", hp, "TOP", debuffXOffset, debuffY)
         end
         
         -- Determine actual debuff count for preview (for stacking calculation)
@@ -2445,11 +2447,11 @@ local function CreatePreview(parent)
             buffY = buffY + debuffHeight + 4
         end
         if buffGrowDir == "LEFT" then
-            buffContainer:SetPoint("BOTTOMLEFT", hp, "TOPLEFT", 0, buffY)
+            buffContainer:SetPoint("BOTTOMLEFT", hp, "TOPLEFT", buffXOffset, buffY)
         elseif buffGrowDir == "RIGHT" then
-            buffContainer:SetPoint("BOTTOMRIGHT", hp, "TOPRIGHT", 0, buffY)
+            buffContainer:SetPoint("BOTTOMRIGHT", hp, "TOPRIGHT", buffXOffset, buffY)
         else
-            buffContainer:SetPoint("BOTTOM", hp, "TOP", 0, buffY)
+            buffContainer:SetPoint("BOTTOM", hp, "TOP", buffXOffset, buffY)
         end
         
         -- Show/hide and populate containers
@@ -2826,16 +2828,15 @@ function ns:ToggleGUI()
     -- Show Guild checkbox (dependent on Name Only) - indented as child
     local friendlyGuildCB = CreateCheckBox(p1, "friendlyGuild", L.FriendlyGuild, 40, y - 205)
     
-    -- Click-through checkbox (dependent on Name Only) - indented as child
-    -- Note: Click-through only applies during combat, so no immediate update needed
-    local clickThroughCB = CreateCheckBox(p1, "friendlyClickThrough", L.FriendlyClickThrough, 40, y - 235)
-    clickThroughCB:SetScript("OnEnter", function(self)
+    -- Show HP when damaged checkbox (dependent on Name Only) - indented as child
+    local liteHealthCB = CreateCheckBox(p1, "liteHealthWhenDamaged", L.LiteHealthWhenDamaged, 40, y - 235)
+    liteHealthCB:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(L.FriendlyClickThrough, 1, 1, 1)
-        GameTooltip:AddLine(L.FriendlyClickThroughTip, nil, nil, nil, true)
+        GameTooltip:SetText(L.LiteHealthWhenDamaged, 1, 1, 1)
+        GameTooltip:AddLine(L.LiteHealthWhenDamagedTip, nil, nil, nil, true)
         GameTooltip:Show()
     end)
-    clickThroughCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    liteHealthCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
     
     -- Helper to update dependent checkboxes state based on name-only
     local function UpdateNameOnlyDependents()
@@ -2844,16 +2845,16 @@ function ns:ToggleGUI()
             friendlyGuildCB:Enable()
             friendlyGuildCB:SetAlpha(1)
             friendlyGuildCB.label:SetTextColor(1, 1, 1)
-            clickThroughCB:Enable()
-            clickThroughCB:SetAlpha(1)
-            clickThroughCB.label:SetTextColor(1, 1, 1)
+            liteHealthCB:Enable()
+            liteHealthCB:SetAlpha(1)
+            liteHealthCB.label:SetTextColor(1, 1, 1)
         else
             friendlyGuildCB:Disable()
             friendlyGuildCB:SetAlpha(0.5)
             friendlyGuildCB.label:SetTextColor(0.5, 0.5, 0.5)
-            clickThroughCB:Disable()
-            clickThroughCB:SetAlpha(0.5)
-            clickThroughCB.label:SetTextColor(0.5, 0.5, 0.5)
+            liteHealthCB:Disable()
+            liteHealthCB:SetAlpha(0.5)
+            liteHealthCB.label:SetTextColor(0.5, 0.5, 0.5)
         end
     end
     
@@ -3596,15 +3597,20 @@ function ns:ToggleGUI()
         frame:SetSize(220, 50)
         frame:SetPoint("TOPLEFT", x, y)
         
-        local title = frame:CreateFontString(nil, "OVERLAY")
-        title:SetFont(GUI_FONT, 12, "")
-        title:SetPoint("TOPLEFT", 0, 0)
-        title:SetText(label)
-        title:SetTextColor(1, 0.8, 0)
+        -- Only create title if label is provided
+        local btnYOffset = 0
+        if label and label ~= "" then
+            local title = frame:CreateFontString(nil, "OVERLAY")
+            title:SetFont(GUI_FONT, 12, "")
+            title:SetPoint("TOPLEFT", 0, 0)
+            title:SetText(label)
+            title:SetTextColor(1, 0.8, 0)
+            btnYOffset = -18
+        end
         
         local btn = CreateFrame("Button", "TurboPlatesAuraDD"..auraDropdownCount, frame, "BackdropTemplate")
         btn:SetSize(220, 22)
-        btn:SetPoint("TOPLEFT", 0, -18)
+        btn:SetPoint("TOPLEFT", 0, btnYOffset)
         CreateBD(btn, 0.6)
         btn.__border:SetColor(1, 1, 1, 0.2)
         
@@ -3836,32 +3842,36 @@ function ns:ToggleGUI()
     CreateAuraSlider(p6, "debuffIconWidth", L.AurasDebuffWidth, 10, 50, 260, y, false, nil, "px")
     
     -- Row 2: Display Anchor, Icon Height
-    y = y - 48
+    y = y - 43
     CreateAuraDropdown(p6, "growDirection", L.AurasGrowDirection, anchorOptions, 20, y)
     CreateAuraSlider(p6, "debuffIconHeight", L.AurasDebuffHeight, 10, 50, 260, y, false, nil, "px")
     
-    -- Row 3: Vertical Offset, Icon Spacing
-    y = y - 48
-    CreateAuraSlider(p6, "debuffYOffset", L.AurasYOffset, -20, 40, 20, y, false, nil, "px")
-    CreateAuraSlider(p6, "iconSpacing", L.AurasIconSpacing, 0, 10, 260, y, false, nil, "px")
+    -- Row 3: Horizontal Offset, Vertical Offset
+    y = y - 43
+    CreateAuraSlider(p6, "debuffXOffset", L.AurasXOffset, -200, 200, 20, y, false, nil, "px")
+    CreateAuraSlider(p6, "debuffYOffset", L.AurasYOffset, -200, 200, 260, y, false, nil, "px")
+    
+    -- Row 4: Icon Spacing
+    y = y - 43
+    CreateAuraSlider(p6, "iconSpacing", L.AurasIconSpacing, 0, 10, 20, y, false, nil, "px")
     
     -- Row 4: Timer Font Size, Stack Font Size
-    y = y - 48
+    y = y - 43
     CreateAuraSlider(p6, "debuffFontSize", L.AurasDebuffFontSize, 6, 16, 20, y, false, nil, "px")
     CreateAuraSlider(p6, "debuffStackFontSize", L.AurasDebuffStackFontSize, 6, 16, 260, y, false, nil, "px")
     
     -- Row 5: Timer Anchor, Stack Anchor
-    y = y - 48
+    y = y - 43
     CreateAuraDropdown(p6, "debuffDurationAnchor", L.AurasDurationAnchor, textAnchorOptions, 20, y)
     CreateAuraDropdown(p6, "debuffStackAnchor", L.AurasStackAnchor, textAnchorOptions, 260, y)
     
     -- Row 6: Min Duration, Max Duration
-    y = y - 48
+    y = y - 43
     CreateAuraSlider(p6, "minDuration", L.AurasMinDuration, 0, 30, 20, y, false, nil, "s")
     CreateAuraSlider(p6, "maxDuration", L.AurasMaxDuration, 0, 600, 260, y, false, nil, "s", L.Unlimited or "Unlimited")
     
     -- Row 7: Debuff Sorting dropdown, Border Mode dropdown
-    y = y - 48
+    y = y - 43
     local sortOptions = {
         { name = L.AurasSortLeastTime, value = "LEAST_TIME" },
         { name = L.AurasSortMostRecent, value = "MOST_RECENT" },
@@ -3879,47 +3889,52 @@ function ns:ToggleGUI()
     local p7 = guiPage[7]
     y = -10
     
-    -- Row 0: Filter mode dropdown (also controls enable/disable)
+    -- Row 0: Enable checkbox + Filter mode dropdown
+    CreateAuraCheckBox(p7, "showBuffs", L.AurasShowBuffs, 20, y)
+    
     local buffFilterOptions = {
         { name = L.AurasBuffFilterOnlyDispellable, value = "ONLY_DISPELLABLE" },
         { name = L.AurasBuffFilterWhitelistDispellable, value = "WHITELIST_DISPELLABLE" },
         { name = L.AurasBuffFilterAll, value = "ALL" },
-        { name = L.AurasBuffFilterDisabled, value = "DISABLED" },
     }
-    CreateAuraDropdown(p7, "buffFilterMode", L.AurasBuffFilterMode, buffFilterOptions, 20, y)
+    CreateAuraDropdown(p7, "buffFilterMode", "", buffFilterOptions, 260, y)
     
     -- Row 1: Max Buffs, Icon Width
-    y = y - 48
+    y = y - 40
     CreateAuraSlider(p7, "maxBuffs", L.AurasMaxBuffs, 1, 12, 20, y, false, nil, "")
     CreateAuraSlider(p7, "buffIconWidth", L.AurasBuffWidth, 10, 50, 260, y, false, nil, "px")
     
     -- Row 2: Buff Display Anchor, Icon Height
-    y = y - 48
+    y = y - 43
     CreateAuraDropdown(p7, "buffGrowDirection", L.AurasBuffGrowDirection, anchorOptions, 20, y)
     CreateAuraSlider(p7, "buffIconHeight", L.AurasBuffHeight, 10, 50, 260, y, false, nil, "px")
     
-    -- Row 3: Vertical Offset, Icon Spacing
-    y = y - 48
-    CreateAuraSlider(p7, "buffYOffset", L.AurasYOffset, -20, 40, 20, y, false, nil, "px")
-    CreateAuraSlider(p7, "buffIconSpacing", L.AurasBuffIconSpacing, 0, 10, 260, y, false, nil, "px")
+    -- Row 3: Horizontal Offset, Vertical Offset
+    y = y - 43
+    CreateAuraSlider(p7, "buffXOffset", L.AurasXOffset, -200, 200, 20, y, false, nil, "px")
+    CreateAuraSlider(p7, "buffYOffset", L.AurasYOffset, -200, 200, 260, y, false, nil, "px")
+    
+    -- Row 4: Icon Spacing
+    y = y - 43
+    CreateAuraSlider(p7, "buffIconSpacing", L.AurasBuffIconSpacing, 0, 10, 20, y, false, nil, "px")
     
     -- Row 4: Timer Font Size, Stack Font Size
-    y = y - 48
+    y = y - 43
     CreateAuraSlider(p7, "buffFontSize", L.AurasBuffFontSize, 6, 16, 20, y, false, nil, "px")
     CreateAuraSlider(p7, "buffStackFontSize", L.AurasBuffStackFontSize, 6, 16, 260, y, false, nil, "px")
     
     -- Row 5: Timer Anchor, Stack Anchor
-    y = y - 48
+    y = y - 43
     CreateAuraDropdown(p7, "buffDurationAnchor", L.AurasDurationAnchor, textAnchorOptions, 20, y)
     CreateAuraDropdown(p7, "buffStackAnchor", L.AurasStackAnchor, textAnchorOptions, 260, y)
     
     -- Row 6: Min Duration, Max Duration
-    y = y - 48
+    y = y - 43
     CreateAuraSlider(p7, "buffMinDuration", L.AurasBuffMinDuration, 0, 30, 20, y, false, nil, "s")
     CreateAuraSlider(p7, "buffMaxDuration", L.AurasBuffMaxDuration, 0, 600, 260, y, false, nil, "s", L.Unlimited or "Unlimited")
     
     -- Row 7: Buff Sorting dropdown, Border Mode
-    y = y - 48
+    y = y - 43
     local buffSortOptions = {
         { name = L.AurasSortLeastTime, value = "LEAST_TIME" },
         { name = L.AurasSortMostRecent, value = "MOST_RECENT" },
@@ -4378,10 +4393,15 @@ function ns:ToggleGUI()
     CreatePersonalCheckBox(p8, "showBuffs", L.PersonalBarShowBuffs, 20, y)
     CreatePersonalCheckBox(p8, "showDebuffs", L.PersonalBarShowDebuffs, 260, y)
     
-    -- Row 8: Buff Y Offset slider - Debuff Y Offset slider
+    -- Row 8: Buff X/Y Offset sliders
     y = y - 30
-    CreatePersonalSlider(p8, "buffYOffset", L.PersonalBarBuffYOffset or "Buffs Y Position", -80, 80, 20, y, "px")
-    CreatePersonalSlider(p8, "debuffYOffset", L.PersonalBarDebuffYOffset or "Debuffs Y Position", -80, 80, 260, y, "px")
+    CreatePersonalSlider(p8, "buffXOffset", L.AurasXOffset or "Buffs X Position", -200, 200, 20, y, "px")
+    CreatePersonalSlider(p8, "buffYOffset", L.PersonalBarBuffYOffset or "Buffs Y Position", -200, 200, 260, y, "px")
+    
+    -- Row 9: Debuff X/Y Offset sliders
+    y = y - 30
+    CreatePersonalSlider(p8, "debuffXOffset", L.AurasXOffset or "Debuffs X Position", -200, 200, 20, y, "px")
+    CreatePersonalSlider(p8, "debuffYOffset", L.PersonalBarDebuffYOffset or "Debuffs Y Position", -200, 200, 260, y, "px")
     
     -- ==========================================================================
     -- TAB 9: CP (Combo Points)
