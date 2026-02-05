@@ -1680,6 +1680,15 @@ local function CreatePreview(parent)
     targetGlow:Hide()
     plate.targetGlow = targetGlow
     
+    -- Target arrows (left and right)
+    local targetArrows = {}
+    targetArrows.left = hp:CreateTexture(nil, "OVERLAY")
+    targetArrows.left:SetTexCoord(1, 0, 0, 1)  -- Flip horizontally for left arrow
+    targetArrows.left:Hide()
+    targetArrows.right = hp:CreateTexture(nil, "OVERLAY")
+    targetArrows.right:Hide()
+    plate.targetArrows = targetArrows
+    
     -- Castbar with initial size
     local cb = CreateFrame("StatusBar", nil, plate)
     cb:SetSize(defWidth - defCastHeight - 2, defCastHeight)
@@ -1709,7 +1718,7 @@ local function CreatePreview(parent)
     local nameText = hp:CreateFontString(nil, "OVERLAY")
     nameText:SetFont(GUI_FONT, 10, "OUTLINE")
     nameText:SetPoint("BOTTOM", hp, "TOP", 0, 3)
-    nameText:SetText("Target Dummy")
+    nameText:SetText("Dummy")
     
     -- Level text (shown right of name when enabled)
     local levelText = hp:CreateFontString(nil, "OVERLAY")
@@ -1952,12 +1961,17 @@ local function CreatePreview(parent)
             end
         end
         
-        -- Update target glow preview
+        -- Update target glow/arrow preview
         local glowStyle = db.targetGlow or d.targetGlow or "none"
+        local arrowStyle = db.targetArrow or d.targetArrow or "none"
         local glowColor = db.targetGlowColor or d.targetGlowColor or { r = 1, g = 1, b = 1 }
         
         -- Hide all glow elements first
         if plate.targetGlow then plate.targetGlow:Hide() end
+        if plate.targetArrows then
+            plate.targetArrows.left:Hide()
+            plate.targetArrows.right:Hide()
+        end
         if plate.thickOutline then 
             plate.thickOutline:Hide()
             -- Hide both cached borders
@@ -1967,6 +1981,41 @@ local function CreatePreview(parent)
             end
         end
         
+        -- Arrow styles
+        local arrowTextures = {
+            arrows_thin = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_thin_right_64.tga",
+            arrows_normal = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_single_right_64.tga",
+            arrows_double = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_double_right_64.tga",
+        }
+        
+        -- Show arrows if enabled
+        if arrowTextures[arrowStyle] and plate.targetArrows then
+            local arrows = plate.targetArrows
+            local texPath = arrowTextures[arrowStyle]
+            arrows.left:SetTexture(texPath)
+            arrows.right:SetTexture(texPath)
+            
+            -- Size scales with HP bar height
+            local hpHeight = db.hpHeight or d.hpHeight or 8
+            local arrowHeight = hpHeight * 1.3
+            local arrowWidth = arrowHeight * 1
+            
+            arrows.left:SetSize(arrowWidth, arrowHeight)
+            arrows.right:SetSize(arrowWidth, arrowHeight)
+            
+            arrows.left:ClearAllPoints()
+            arrows.right:ClearAllPoints()
+            arrows.right:SetPoint("LEFT", hp, "RIGHT", -3, 0)
+            arrows.left:SetPoint("RIGHT", hp, "LEFT", 3, 0)
+            
+            arrows.left:SetVertexColor(glowColor.r, glowColor.g, glowColor.b, 0.9)
+            arrows.right:SetVertexColor(glowColor.r, glowColor.g, glowColor.b, 0.9)
+            
+            arrows.left:Show()
+            arrows.right:Show()
+        end
+        
+        -- Show glow/border if enabled (independent of arrows)
         if glowStyle == "thick" or glowStyle == "thin" then
             -- Thick/Thin outline: solid colored border around healthbar
             if not plate.thickOutline then
@@ -2034,7 +2083,7 @@ local function CreatePreview(parent)
             nameText:SetJustifyH("CENTER")
             nameText:SetWidth(0)
         end
-        nameText:SetText("Target Dummy")
+        nameText:SetText("Dummy")
         
         -- Show/hide name based on nameDisplayFormat
         local nameFormat = db.nameDisplayFormat or d.nameDisplayFormat or "none"
@@ -4307,12 +4356,12 @@ function ns:ToggleGUI()
     CreatePersonalCheckBox(p8, "showPowerBar", L.PersonalBarShowPower, 260, y)
     
     -- Row 2: Width slider - Health Bar height slider
-    y = y - 35
+    y = y - 30
     CreatePersonalSlider(p8, "width", L.PersonalBarWidth or "Bar Width", 60, 200, 20, y, "")
     CreatePersonalSlider(p8, "height", L.PersonalBarHeight, 4, 30, 260, y, "")
     
     -- Row 3: Power Bar height slider - Additional Power height slider OR HERO Power Order dropdown
-    y = y - 60
+    y = y - 50
     CreatePersonalSlider(p8, "powerHeight", L.PersonalBarPowerHeight, 2, 20, 20, y, "")
     
     -- HERO class gets a dropdown for power bar order, others get additional power height slider
@@ -4324,17 +4373,17 @@ function ns:ToggleGUI()
     end
     
     -- Row 4: Health Text Format dropdown - Power Text Format dropdown
-    y = y - 60
+    y = y - 50
     CreatePersonalDropdown(p8, "healthFormat", L.PersonalBarHealthFormat, ns.HealthFormats, 20, y)
     CreatePersonalDropdown(p8, "powerFormat", L.PersonalBarPowerFormat, ns.PowerFormats, 260, y)
     
     -- Row 5: Border Style dropdown - Vertical Offset slider
-    y = y - 60
+    y = y - 50
     CreatePersonalDropdown(p8, "borderStyle", L.PersonalBarBorderStyle or "Border Style", ns.PersonalBorderStyles, 20, y)
     CreatePersonalSlider(p8, "yOffset", L.PersonalBarYOffset, -250, 250, 260, y, "")
     
     -- Row 6: Health Bar color swatch - Threat Coloring checkbox
-    y = y - 55
+    y = y - 50
     do
         local swatch = CreateFrame("Button", nil, p8, "BackdropTemplate")
         swatch:SetSize(18, 18)
@@ -4386,21 +4435,21 @@ function ns:ToggleGUI()
         swatch:SetScript("OnShow", RefreshColor)
         RefreshColor()
     end
-    CreatePersonalCheckBox(p8, "useThreatColoring", L.PersonalBarUseThreatColoring or "Threat Coloring", 260, y)
+    CreatePersonalCheckBox(p8, "useClassColor", L.PersonalBarUseClassColor or "Color by Class", 260, y)
     
     -- Row 7: Show Buffs checkbox - Show Debuffs checkbox
-    y = y - 35
+    y = y - 30
     CreatePersonalCheckBox(p8, "showBuffs", L.PersonalBarShowBuffs, 20, y)
     CreatePersonalCheckBox(p8, "showDebuffs", L.PersonalBarShowDebuffs, 260, y)
     
-    -- Row 8: Buff X/Y Offset sliders
+    -- Row 8: Buffs X Position - Buffs Y Position
     y = y - 30
-    CreatePersonalSlider(p8, "buffXOffset", L.AurasXOffset or "Buffs X Position", -200, 200, 20, y, "px")
+    CreatePersonalSlider(p8, "buffXOffset", L.PersonalBarBuffXOffset or "Buffs X Position", -200, 200, 20, y, "px")
     CreatePersonalSlider(p8, "buffYOffset", L.PersonalBarBuffYOffset or "Buffs Y Position", -200, 200, 260, y, "px")
     
-    -- Row 9: Debuff X/Y Offset sliders
-    y = y - 30
-    CreatePersonalSlider(p8, "debuffXOffset", L.AurasXOffset or "Debuffs X Position", -200, 200, 20, y, "px")
+    -- Row 9: Debuffs X Position - Debuffs Y Position
+    y = y - 50
+    CreatePersonalSlider(p8, "debuffXOffset", L.PersonalBarDebuffXOffset or "Debuffs X Position", -200, 200, 20, y, "px")
     CreatePersonalSlider(p8, "debuffYOffset", L.PersonalBarDebuffYOffset or "Debuffs Y Position", -200, 200, 260, y, "px")
     
     -- ==========================================================================
@@ -5257,7 +5306,7 @@ function ns:ToggleGUI()
     local p13 = guiPage[13]
     y = -10
     
-    -- Row 1: Totem Display (left) & Target Glow (right)
+    -- Row 1: Totem Display (left) & Performance header + Potato PC Mode (right)
     local totemOpts = {
         {name = L.TotemDisabled, value = "disabled"},
         {name = L.TotemHPName, value = "hp_name"},
@@ -5267,34 +5316,16 @@ function ns:ToggleGUI()
         {name = L.TotemIconNameHP, value = "icon_name_hp"},
     }
     CreateDropdown(p13, "totemDisplay", L.TotemDisplay, totemOpts, 20, y)
-    CreateDropdown(p13, "targetGlow", L.TargetGlow, ns.TargetGlowStyles, 260, y)
     
-    -- Section: Nameplate Clickable Area
-    local clickHeader = p13:CreateFontString(nil, "OVERLAY")
-    clickHeader:SetFont(GUI_FONT, 12, "")
-    clickHeader:SetPoint("TOPLEFT", 20, y - 60)
-    clickHeader:SetText(L.ClickableAreaHeader or "Nameplate Clickable Area:")
-    clickHeader:SetTextColor(1, 0.8, 0)
-    
-    -- Show Clickbox toggle - uses Blizzard's native DrawNameplateClickBox CVar
-    -- Requires reload to apply, syncs with external CVar changes via CVAR_UPDATE
-    local showClickbox = CreateCVarCheckBox(p13, "DrawNameplateClickBox", L.ShowClickbox, 260, y - 57, function(self)
-        StaticPopup_Show("TURBOPLATES_RELOAD_UI")
-    end)
-    
-    -- Clickable Width & Height sliders (below header)
-    CreateCVarSlider(p13, "nameplateWidth", L.ClickableWidth, 40, 200, 20, y - 95, nil, "px")
-    CreateCVarSlider(p13, "nameplateHeight", L.ClickableHeight, 18, 60, 260, y - 95, nil, "px")
-    
-    -- Section: Performance
+    -- Performance header (right side)
     local perfHeader = p13:CreateFontString(nil, "OVERLAY")
     perfHeader:SetFont(GUI_FONT, 12, "")
-    perfHeader:SetPoint("TOPLEFT", 20, y - 145)
-    perfHeader:SetText("Performance:")
+    perfHeader:SetPoint("TOPLEFT", 260, y)
+    perfHeader:SetText(L.PerformanceHeader or "Performance:")
     perfHeader:SetTextColor(1, 0.8, 0)
     
-    -- Potato PC Mode checkbox
-    local potatoCheck = CreateCheckBox(p13, "potatoMode", L.PotatoPCMode, 20, y - 170)
+    -- Potato PC Mode checkbox (below Performance header)
+    local potatoCheck = CreateCheckBox(p13, "potatoMode", L.PotatoPCMode, 260, y - 18)
     potatoCheck:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(L.PotatoPCMode, 1, 0.8, 0)
@@ -5308,6 +5339,30 @@ function ns:ToggleGUI()
         -- Show reload prompt since aura batching interval is set at load time
         StaticPopup_Show("TURBOPLATES_RELOAD_UI")
     end)
+    
+    -- Row 2: Target Glow (left) & Target Arrow (right)
+    y = y - 50
+    CreateDropdown(p13, "targetGlow", L.TargetGlow, ns.TargetGlowStyles, 20, y)
+    CreateDropdown(p13, "targetArrow", L.TargetArrow, ns.TargetArrowStyles, 260, y)
+    
+    -- Section: Nameplate Clickable Area
+    y = y - 50
+    local clickHeader = p13:CreateFontString(nil, "OVERLAY")
+    clickHeader:SetFont(GUI_FONT, 12, "")
+    clickHeader:SetPoint("TOPLEFT", 20, y)
+    clickHeader:SetText(L.ClickableAreaHeader or "Nameplate Clickable Area:")
+    clickHeader:SetTextColor(1, 0.8, 0)
+    
+    -- Show Clickbox toggle - uses Blizzard's native DrawNameplateClickBox CVar
+    -- Requires reload to apply, syncs with external CVar changes via CVAR_UPDATE
+    local showClickbox = CreateCVarCheckBox(p13, "DrawNameplateClickBox", L.ShowClickbox, 260, y + 3, function(self)
+        StaticPopup_Show("TURBOPLATES_RELOAD_UI")
+    end)
+    
+    -- Clickable Width & Height sliders (below header)
+    y = y - 35
+    CreateCVarSlider(p13, "nameplateWidth", L.ClickableWidth, 40, 200, 20, y, nil, "px")
+    CreateCVarSlider(p13, "nameplateHeight", L.ClickableHeight, 18, 60, 260, y, nil, "px")
     
     -- TAB 14: Profiles (Import/Export)
     local p14 = guiPage[14]

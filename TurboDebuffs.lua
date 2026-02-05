@@ -114,7 +114,10 @@ local Spells = {
     [9634] = { type = "buffs_other" },  -- Dire Bear Form
     [783] = { type = "buffs_other" },   -- Travel Form
     [24858] = { type = "buffs_other" }, -- Moonkin Form
-    [33891] = { type = "buffs_other" }, -- Tree of Life
+    [33891] = {},                       -- Tree of Life (A52) - blocked
+    [34123] = {},                       -- Tree of Life aura (A52) - blocked
+    [113891] = { type = "buffs_other" }, -- Tree of Life form (Bronzebeard)
+    [1134123] = {},                     -- Tree of Life aura (Bronzebeard) - blocked
     [58179] = { type = "snare" },       -- Infected Wounds
     [58181] = { parent = 58179 },
     [61391] = { type = "snare" },       -- Typhoon

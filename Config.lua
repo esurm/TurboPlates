@@ -27,7 +27,7 @@ ns.L = {
     PersonalBarPowerHeight = "Power Bar Height",
     PersonalBarHealthFormat = "Health Text Format",
     PersonalBarPowerFormat = "Power Text Format",
-    PersonalBarUseThreatColoring = "Color by Threat",
+    PersonalBarUseClassColor = "Color by Class",
     PersonalBarShowBuffs = "Show Buffs",
     PersonalBarShowDebuffs = "Show Debuffs",
     PersonalBarBorderStyle = "Border Style",
@@ -306,6 +306,7 @@ ns.L = {
     PetScale = "Pet Nameplate Scale",
     PetColor = "Enemy Pet",
     TargetGlow = "Target Glow",
+    TargetArrow = "Target Arrow",
     TargetGlowColor = "Target Glow",
     ClickableAreaHeader = "Nameplate Clickable Area Settings:",
     ClickableWidth = "Clickable Width",
@@ -400,6 +401,9 @@ ns.TargetGlowStyles = {
     { name = "Border Glow", value = "border" },
     { name = "Thick Outline", value = "thick" },
     { name = "Thin Outline", value = "thin" },
+}
+ns.TargetArrowStyles = {
+    { name = "Disabled", value = "none" },
     { name = "Arrow (Thin)", value = "arrows_thin" },
     { name = "Arrow (Normal)", value = "arrows_normal" },
     { name = "Arrow (Double)", value = "arrows_double" },
@@ -547,6 +551,7 @@ ns.defaults = {
     petScale = 0.7,
     petColor = { r = 0.5, g = 0.5, b = 0.5 },
     targetGlow = "border",  -- Target glow style: none, border, thick, thin
+    targetArrow = "none",   -- Target arrow style: none, arrows_thin, arrows_normal, arrows_double
     targetGlowColor = { r = 0, g = 1, b = 1 },  -- Neon cyan
     tappedColor = { r = 0.5, g = 0.5, b = 0.5 },  -- Grey for tapped units
     -- Quest objective icons
@@ -590,7 +595,7 @@ ns.defaults = {
         powerFormat = "percent",
         healthColor = { r = 0.612, g = 1, b = 0 },  -- Lime green
         powerColorByType = true,  -- Use class power colors (mana=blue, rage=red, etc.)
-        useThreatColoring = false,  -- Use threat colors from nameplate system when applicable
+        useClassColor = false,  -- Use class color for health bar
         showAdditionalPower = true,  -- Show mana bar when druid is shapeshifted
         additionalPowerHeight = 6,  -- Height of additional mana bar
         heroPowerOrder = 1,  -- HERO class power bar order (1=Mana>Energy>Rage)

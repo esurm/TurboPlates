@@ -2,7 +2,7 @@
 ## Title: |cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r
 ## Notes: Go faster with world's most lightweight nameplates!
 ## Author: surm
-## Version: 1.3.8
+## Version: 1.3.9
 ## SavedVariables: TurboPlatesDB
 
 Libs\LibStub\LibStub.lua

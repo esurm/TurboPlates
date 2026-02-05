@@ -488,6 +488,14 @@ Core:SetScript("OnEvent", function(self, event, ...)
             end
         end)
         
+        -- Delayed quest icon refresh (API may not be ready immediately at login)
+        -- Similar to Plater's 4.1s delay for QuestLogUpdated
+        C_Timer.After(3, function()
+            if ns.UpdateAllQuestIcons then
+                ns.UpdateAllQuestIcons()
+            end
+        end)
+        
         -- Check for incompatible nameplate addons
         -- Special case: Ascension_NamePlates is controlled by CVar, not addon list
         if C_CVar.GetBool("useNewNameplates") then
@@ -579,9 +587,10 @@ local function SetupLiteContainer(container, nameplate)
     levelText:Hide()
     container.liteLevelText = levelText
     
-    -- Lite health bar (shown when damaged)
-    local hpWidth = math.floor((ns.c_width or 110) / 2)
-    local hpHeight = math.floor((ns.c_hpHeight or 12) / 2)
+    -- Lite health bar (shown when damaged) - size scales with friendlyFontSize
+    local friendlySize = ns.c_friendlyFontSize or 12
+    local hpWidth = math.floor(friendlySize * 5)   -- Width proportional to font size
+    local hpHeight = math.floor(friendlySize * 0.5) -- Height proportional to font size
     local liteHP = CreateFrame("StatusBar", nil, container)
     PixelUtil.SetSize(liteHP, hpWidth, hpHeight, 1, 1)
     PixelUtil.SetPoint(liteHP, "TOP", txt, "BOTTOM", 0, -2, 1, 1)
@@ -595,9 +604,9 @@ local function SetupLiteContainer(container, nameplate)
     liteHPBG:SetAllPoints()
     liteHPBG:SetColorTexture(0, 0, 0, 0.7)
     
-    -- Lite health text (percent)
+    -- Lite health text - scales with friendlyFontSize
     local liteHPText = liteHP:CreateFontString(nil, "OVERLAY")
-    local fontSize = math.max(7, math.floor((ns.c_fontSize or 9) * 0.9))
+    local fontSize = math.max(7, math.floor(friendlySize * 0.75))
     liteHPText:SetFont(ns.c_font or defaultFont, fontSize, "OUTLINE")
     liteHPText:SetPoint("CENTER", liteHP, "CENTER", 0, 0)
     liteHPText:SetTextColor(1, 1, 1)
@@ -865,27 +874,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         
         -- Update lite health bar when damaged
         if ns.c_liteHealthWhenDamaged and container.liteHealthBar then
-            local health = UnitHealth(unit)
-            local maxHealth = UnitHealthMax(unit)
-            if health < maxHealth and maxHealth > 0 then
-                local liteHP = container.liteHealthBar
-                liteHP:SetMinMaxValues(0, maxHealth)
-                liteHP:SetValue(health)
-                -- Update percent text
-                local pct = math.floor((health / maxHealth) * 100)
-                container.liteHealthText:SetText(pct .. "%")
-                -- Update color based on health percent (green to red gradient)
-                local r, g = 1, 1
-                if pct < 50 then
-                    r, g = 1, pct / 50
-                else
-                    r = (100 - pct) / 50
-                end
-                liteHP:SetStatusBarColor(r, g, 0)
-                liteHP:Show()
-            else
-                container.liteHealthBar:Hide()
-            end
+            ns:UpdateLiteHealthBar(container, unit)
         elseif container.liteHealthBar then
             container.liteHealthBar:Hide()
         end
@@ -968,6 +957,10 @@ local function OnNamePlateRemoved(_, unit, nameplate)
         -- Clean up castbar BEFORE clearing unit mapping (so lookup works)
         if ns.CleanupCastbar then
             ns:CleanupCastbar(unit)
+        end
+        -- Clear quest retry state for this unit
+        if ns.ClearQuestRetryState then
+            ns.ClearQuestRetryState(unit)
         end
         ns.unitToPlate[unit] = nil
         -- Clear personal plate reference if this was the player's nameplate
@@ -1104,6 +1097,38 @@ end
 
 -- Note: Lite plate cache is now handled by Nameplates.lua:UpdateDBCache (ns.c_*)
 
+-- Update lite health bar (shared between OnNamePlateAdded and UNIT_HEALTH updates)
+function ns:UpdateLiteHealthBar(container, unit)
+    if not container or not container.liteHealthBar then return end
+    
+    local health = UnitHealth(unit)
+    local maxHealth = UnitHealthMax(unit)
+    
+    if health < maxHealth and maxHealth > 0 then
+        local liteHP = container.liteHealthBar
+        liteHP:SetMinMaxValues(0, maxHealth)
+        liteHP:SetValue(health)
+        -- Update text using health value format setting
+        if ns.FormatHealthValue then
+            container.liteHealthText:SetText(ns.FormatHealthValue(health, maxHealth))
+        else
+            container.liteHealthText:SetText("")
+        end
+        -- Update color based on health percent (green to red gradient)
+        local pct = math.floor((health / maxHealth) * 100)
+        local r, g = 1, 1
+        if pct < 50 then
+            r, g = 1, pct / 50
+        else
+            r = (100 - pct) / 50
+        end
+        liteHP:SetStatusBarColor(r, g, 0)
+        liteHP:Show()
+    else
+        container.liteHealthBar:Hide()
+    end
+end
+
 function ns:UpdateAllPlates()
     
     for nameplate in EnumerateActiveNamePlates() do
@@ -1163,10 +1188,11 @@ function ns:UpdateAllPlates()
                     guild._lastOutline = ns.c_fontOutline
                 end
 
-                -- Lite damaged-HP refresh (size/texture/font)
+                -- Lite damaged-HP refresh (size/texture/font) - scales with friendlyFontSize
                 if container.liteHealthBar then
-                    local hpWidth = math.floor((ns.c_width or 110) / 2)
-                    local hpHeight = math.floor((ns.c_hpHeight or 12) / 2)
+                    local friendlySize = ns.c_friendlyFontSize or 12
+                    local hpWidth = math.floor(friendlySize * 5)
+                    local hpHeight = math.floor(friendlySize * 0.5)
                     if container.liteHealthBar._lastW ~= hpWidth or container.liteHealthBar._lastH ~= hpHeight then
                         PixelUtil.SetSize(container.liteHealthBar, hpWidth, hpHeight, 1, 1)
                         container.liteHealthBar._lastW = hpWidth
@@ -1182,7 +1208,7 @@ function ns:UpdateAllPlates()
                 if container.liteHealthText then
                     local defaultFont = "Fonts\\FRIZQT__.TTF"
                     local font = ns.c_font or defaultFont
-                    local fontSize = math.max(7, math.floor((ns.c_fontSize or 9) * 0.9))
+                    local fontSize = math.max(7, math.floor((ns.c_friendlyFontSize or 12) * 0.75))
                     local outline = ns.c_fontOutline or "OUTLINE"
                     if container.liteHealthText._lastFont ~= font or container.liteHealthText._lastSize ~= fontSize or container.liteHealthText._lastOutline ~= outline then
                         container.liteHealthText:SetFont(font, fontSize, outline)

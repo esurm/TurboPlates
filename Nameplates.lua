@@ -233,7 +233,7 @@ ns.BORDER_ALPHA = BORDER_ALPHA
 local THROTTLE = {
     health = 0.05,      -- 20 FPS (50ms) - fast enough for burst windows
     threat = 0.066,     -- 15 FPS (66ms) - threat changes infrequently
-    quest = 0.2,        -- 5 FPS (200ms) - quest log rarely changes rapidly
+    quest = 0.5,        -- 2 FPS (500ms) - give API time to update after quest events
     personal = 0.05,    -- 20 FPS (50ms) - same as health
     targetingMe = 0.1,  -- 10 FPS (100ms) - polling rate for arena targeting
     vigilance = 5,      -- 0.2 FPS (5s) - group vigilance buff scan
@@ -388,6 +388,7 @@ function ns:UpdateDBCache()
     
     -- Target glow settings
     ns.c_targetGlow = db.targetGlow or "none"
+    ns.c_targetArrow = db.targetArrow or "none"
     local tgc = db.targetGlowColor or { r = 1, g = 1, b = 1 }
     ns.c_targetGlowColor_r, ns.c_targetGlowColor_g, ns.c_targetGlowColor_b = tgc.r, tgc.g, tgc.b
     
@@ -452,7 +453,7 @@ function ns:UpdateDBCache()
     ns.c_personalHealthColor_g = phc.g or 0.8
     ns.c_personalHealthColor_b = phc.b or 0
     ns.c_personalPowerColorByType = personal.powerColorByType ~= false
-    ns.c_personalUseThreatColoring = personal.useThreatColoring == true  -- Default false
+    ns.c_personalUseClassColor = personal.useClassColor == true  -- Default false
     ns.c_personalShowAdditionalPower = personal.showAdditionalPower ~= false
     ns.c_personalAdditionalPowerHeight = personal.additionalPowerHeight or 6
     ns.c_personalHeroPowerOrder = personal.heroPowerOrder or 1  -- HERO class power order
@@ -1075,6 +1076,9 @@ local function FormatHealthValue(current, max, healthFmt)
     
     return ""
 end
+
+-- Expose for Core.lua lite health bar
+ns.FormatHealthValue = FormatHealthValue
 
 -- Rounded combo point texture
 local CP_ROUND_TEXTURE = "Interface\\AddOns\\TurboPlates\\Textures\\Circle_AlphaGradient_Out"
@@ -2299,6 +2303,7 @@ local function UpdateTargetGlow(myPlate, isTarget)
     if myPlate.isPlayer then return end
     
     local glowStyle = ns.c_targetGlow
+    local arrowStyle = ns.c_targetArrow
     
     -- Hide all glow elements first
     if myPlate.targetGlow then myPlate.targetGlow:Hide() end
@@ -2315,59 +2320,58 @@ local function UpdateTargetGlow(myPlate, isTarget)
         end
     end
     
-    if glowStyle == "none" or not isTarget then
+    if not isTarget then
         return
     end
 
-    -- Arrow styles share common logic
+    -- Arrow styles
     local arrowTextures = {
         arrows_thin = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_thin_right_64.tga",
         arrows_normal = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_single_right_64.tga",
         arrows_double = "Interface\\AddOns\\TurboPlates\\Textures\\arrow_double_right_64.tga",
     }
 
-    if arrowTextures[glowStyle] then
+    -- Show arrows if enabled
+    if arrowTextures[arrowStyle] then
         local arrows = myPlate.targetArrows
         local hp = myPlate.hp
-        if not arrows or not hp then
-            return
+        if arrows and hp then
+            -- Set texture for both arrows
+            local texPath = arrowTextures[arrowStyle]
+            arrows.left:SetTexture(texPath)
+            arrows.right:SetTexture(texPath)
+
+            -- Size scales with HP bar height
+            local effectiveScale = hp:GetEffectiveScale()
+            local hpHeight = ns.c_hpHeight or 8
+            local arrowHeight = PixelUtil.GetNearestPixelSize(hpHeight * 1.3, effectiveScale, 1)
+            local arrowWidth = PixelUtil.GetNearestPixelSize(arrowHeight * 1, effectiveScale, 1)
+
+            local sizeKey = arrowStyle .. ":" .. arrowWidth .. ":" .. arrowHeight .. ":" .. hpHeight
+            if arrows._lastSizeKey ~= sizeKey then
+                PixelUtil.SetSize(arrows.left, arrowWidth, arrowHeight, 1, 1)
+                PixelUtil.SetSize(arrows.right, arrowWidth, arrowHeight, 1, 1)
+
+                arrows.left:ClearAllPoints()
+                arrows.right:ClearAllPoints()
+
+                -- Position arrows overlapping the bar edges
+                PixelUtil.SetPoint(arrows.right, "LEFT", hp, "RIGHT", -3, 0, 1, 1)
+                PixelUtil.SetPoint(arrows.left, "RIGHT", hp, "LEFT", 3, 0, 1, 1)
+
+                arrows._lastSizeKey = sizeKey
+            end
+
+            local r, g, b = ns.c_targetGlowColor_r, ns.c_targetGlowColor_g, ns.c_targetGlowColor_b
+            arrows.left:SetVertexColor(r, g, b, 0.9)
+            arrows.right:SetVertexColor(r, g, b, 0.9)
+
+            arrows.left:Show()
+            arrows.right:Show()
         end
-
-        -- Set texture for both arrows
-        local texPath = arrowTextures[glowStyle]
-        arrows.left:SetTexture(texPath)
-        arrows.right:SetTexture(texPath)
-
-        -- Size scales with HP bar height
-        local effectiveScale = hp:GetEffectiveScale()
-        local hpHeight = ns.c_hpHeight or 8
-        local arrowHeight = PixelUtil.GetNearestPixelSize(hpHeight * 1.3, effectiveScale, 1)
-        local arrowWidth = PixelUtil.GetNearestPixelSize(arrowHeight * 1, effectiveScale, 1)
-
-        local sizeKey = glowStyle .. ":" .. arrowWidth .. ":" .. arrowHeight .. ":" .. hpHeight
-        if arrows._lastSizeKey ~= sizeKey then
-            PixelUtil.SetSize(arrows.left, arrowWidth, arrowHeight, 1, 1)
-            PixelUtil.SetSize(arrows.right, arrowWidth, arrowHeight, 1, 1)
-
-            arrows.left:ClearAllPoints()
-            arrows.right:ClearAllPoints()
-
-            -- Position arrows overlapping the bar edges
-            PixelUtil.SetPoint(arrows.right, "LEFT", hp, "RIGHT", -3, 0, 1, 1)
-            PixelUtil.SetPoint(arrows.left, "RIGHT", hp, "LEFT", 3, 0, 1, 1)
-
-            arrows._lastSizeKey = sizeKey
-        end
-
-        local r, g, b = ns.c_targetGlowColor_r, ns.c_targetGlowColor_g, ns.c_targetGlowColor_b
-        arrows.left:SetVertexColor(r, g, b, 0.9)
-        arrows.right:SetVertexColor(r, g, b, 0.9)
-
-        arrows.left:Show()
-        arrows.right:Show()
-        return
     end
     
+    -- Show glow/border if enabled (independent of arrows)
     if glowStyle == "thick" or glowStyle == "thin" then
         -- Thick/Thin outline: solid colored border around healthbar (pixel-perfect texture-based)
         -- Positioned OUTSIDE the existing 1px black hp.border
@@ -2447,7 +2451,7 @@ local function UpdateTargetGlow(myPlate, isTarget)
         )
         border:Show()
         outline:Show()
-    else
+    elseif glowStyle == "border" then
         -- Border glow style: glow surrounding the healthbar
         if not myPlate.targetGlow then return end
         local glow = myPlate.targetGlow
@@ -2783,8 +2787,8 @@ function ns:UpdatePlateStyle(myPlate)
             myPlate._lastPersonalTexture = ns.c_texture
         end
         
-        -- Health bar color (only if not using threat coloring, or threat coloring just got disabled)
-        if not ns.c_personalUseThreatColoring then
+        -- Health bar color (apply class color or user-defined color)
+        if not ns.c_personalUseClassColor then
             local r = ns.c_personalHealthColor_r or 0
             local g = ns.c_personalHealthColor_g or 0.8
             local b = ns.c_personalHealthColor_b or 0
@@ -3495,6 +3499,22 @@ local function UpdateHealth(unit)
     end
 end
 
+-- Update health for lite plates (name-only friendly plates with health bar when damaged)
+local function UpdateLiteHealth(unit)
+    local nameplate = C_NamePlate_GetNamePlateForUnit(unit)
+    if not nameplate or not nameplate._isLite then return end
+    
+    local container = nameplate.liteContainer
+    if not container or not container.liteHealthBar then return end
+    
+    if not ns.c_liteHealthWhenDamaged then
+        container.liteHealthBar:Hide()
+        return
+    end
+    
+    ns:UpdateLiteHealthBar(container, unit)
+end
+
 -- Group role tracking for off-tank detection
 local group = {
     roles = {},      -- [guid] = role
@@ -3770,68 +3790,6 @@ end
 -- Getter for player tank status (used by smart tank mode)
 function ns:IsPlayerTank()
     return group.playerIsTank
-end
-
--- Get threat color for personal bar based on current target
--- Returns r, g, b if threat coloring applies, or nil if should use default color
--- Only returns threat colors for hostile NPCs that we're engaged with
-local function GetPersonalThreatColor()
-    -- Must have a target
-    if not UnitExists("target") then return nil end
-    
-    -- Target must be hostile NPC (not player, not friendly, not neutral)
-    if UnitIsFriend("player", "target") then return nil end
-    if UnitIsPlayer("target") then return nil end
-    if UnitPlayerControlled("target") then return nil end
-    
-    local reaction = UnitReaction("target", "player")
-    if reaction and reaction >= 4 then return nil end  -- Neutral or friendly
-    
-    -- Must be on threat table (status ~= nil)
-    local isTanking, status = UnitDetailedThreatSituation("player", "target")
-    if status == nil then return nil end  -- Not engaged
-    
-    -- Determine tank mode
-    local tankModeActive = false
-    local tankModeValue = ns.c_tankMode
-    if tankModeValue == 2 then
-        tankModeActive = true
-    elseif tankModeValue == 1 then
-        tankModeActive = group.playerIsTank
-    end
-    
-    -- Return appropriate threat color based on mode and status
-    if tankModeActive then
-        -- TANK MODE
-        if status == 3 then
-            return ns.c_secureColor_r, ns.c_secureColor_g, ns.c_secureColor_b
-        elseif status == 2 then
-            return ns.c_transColor_r, ns.c_transColor_g, ns.c_transColor_b
-        elseif status == 1 then
-            local isOffTank = CheckOffTank("target")
-            if isOffTank then
-                return ns.c_offTankColor_r, ns.c_offTankColor_g, ns.c_offTankColor_b
-            else
-                return ns.c_transColor_r, ns.c_transColor_g, ns.c_transColor_b
-            end
-        else
-            local isOffTank = CheckOffTank("target")
-            if isOffTank then
-                return ns.c_offTankColor_r, ns.c_offTankColor_g, ns.c_offTankColor_b
-            else
-                return ns.c_insecureColor_r, ns.c_insecureColor_g, ns.c_insecureColor_b
-            end
-        end
-    else
-        -- DPS/HEALER MODE
-        if status == 3 then
-            return ns.c_dpsAggroColor_r, ns.c_dpsAggroColor_g, ns.c_dpsAggroColor_b
-        elseif status == 2 or status == 1 then
-            return ns.c_dpsTransColor_r, ns.c_dpsTransColor_g, ns.c_dpsTransColor_b
-        else
-            return ns.c_dpsSecureColor_r, ns.c_dpsSecureColor_g, ns.c_dpsSecureColor_b
-        end
-    end
 end
 
 -- =============================================================================
@@ -4716,14 +4674,15 @@ local function EnsureQuestIcon(myPlate)
     myPlate.questIcon = questIcon
 end
 
--- Cache GetQuestLogIndexByID and GetQuestLogTitle for quest completion check
-local GetQuestLogIndexByID = GetQuestLogIndexByID
-local GetQuestLogTitle = GetQuestLogTitle
--- Cache string.isNilOrEmpty if available, otherwise provide fallback
-local stringIsNilOrEmpty = string.isNilOrEmpty or function(s) return s == nil or s == "" end
-
--- Quest icon retry timers
-local questRetryTimers = {}
+-- Quest system state (consolidated to reduce local variable count)
+local Quest = {
+    GetLogIndexByID = GetQuestLogIndexByID,
+    GetLogTitle = GetQuestLogTitle,
+    isNilOrEmpty = string.isNilOrEmpty or function(s) return s == nil or s == "" end,
+    retryState = {},  -- Key = unit string, Value = { token, attempt }
+    MAX_RETRIES = 4,
+    RETRY_DELAYS = { 0.15, 0.3, 0.6, 1.2 },  -- Exponential backoff
+}
 
 -- Update quest objective icon for a unit (full plates)
 -- Uses C_QuestLog.GetUnitQuestInfo and QuestUtil to get appropriate icon
@@ -4755,36 +4714,43 @@ local function UpdateQuestIcon(unit)
     local questStatus, questID, talkToMe = C_QuestLog.GetUnitQuestInfo(unit)
     
     -- No quest data for this unit
-    if stringIsNilOrEmpty(talkToMe) and not questStatus then
-        -- Retry mechanism: if unit exists but API returned nil, schedule retry
-        if UnitExists(unit) and not questRetryTimers[unit] then
-            local token = {}
-            questRetryTimers[unit] = token
-            C_Timer_After(0.15, function()
-                if questRetryTimers[unit] ~= token then return end
-                questRetryTimers[unit] = nil
-                if UnitExists(unit) then
-                    UpdateQuestIcon(unit)
-                end
-            end)
+    if Quest.isNilOrEmpty(talkToMe) and not questStatus then
+        -- Retry mechanism with exponential backoff
+        if UnitExists(unit) then
+            local state = Quest.retryState[unit]
+            local attempt = state and state.attempt or 0
+            
+            if attempt < Quest.MAX_RETRIES then
+                local token = {}
+                local delay = Quest.RETRY_DELAYS[attempt + 1] or 1.2
+                Quest.retryState[unit] = { token = token, attempt = attempt + 1 }
+                
+                C_Timer_After(delay, function()
+                    local current = Quest.retryState[unit]
+                    if not current or current.token ~= token then return end
+                    if UnitExists(unit) then
+                        UpdateQuestIcon(unit)
+                    else
+                        Quest.retryState[unit] = nil
+                    end
+                end)
+            end
         end
         if myPlate.questIcon then myPlate.questIcon:Hide() end
         return
     end
     
-    -- Cancel any pending retry for this unit
-    if questRetryTimers[unit] then
-        questRetryTimers[unit] = nil
-    end
+    -- Success - clear retry state for this unit
+    Quest.retryState[unit] = nil
     
     -- Validate quest is in log and not complete (mirror lite plate validation)
     if questID and questID > 0 then
-        local questLogIndex = GetQuestLogIndexByID(questID)
+        local questLogIndex = Quest.GetLogIndexByID(questID)
         if questLogIndex == 0 then
             if myPlate.questIcon then myPlate.questIcon:Hide() end
             return
         else
-            local isComplete = select(7, GetQuestLogTitle(questLogIndex))
+            local isComplete = select(7, Quest.GetLogTitle(questLogIndex))
             if isComplete then
                 if myPlate.questIcon then myPlate.questIcon:Hide() end
                 return
@@ -4795,7 +4761,7 @@ local function UpdateQuestIcon(unit)
     local atlas, desaturate
     
     -- Check for quest NPC (pickup/turnin) first
-    if not stringIsNilOrEmpty(talkToMe) then
+    if not Quest.isNilOrEmpty(talkToMe) then
         if not ns.c_showQuestNPCs then
             if myPlate.questIcon then myPlate.questIcon:Hide() end
             return
@@ -4884,19 +4850,19 @@ local function UpdateLiteQuestIcon(nameplate, unit)
     local questStatus, questID, talkToMe = C_QuestLog.GetUnitQuestInfo(unit)
     
     -- No quest data for this unit
-    if stringIsNilOrEmpty(talkToMe) and not questStatus then
+    if Quest.isNilOrEmpty(talkToMe) and not questStatus then
         if nameplate.liteQuestIcon then nameplate.liteQuestIcon:Hide() end
         return
     end
     
     -- Validate quest is in log and not complete
     if questID and questID > 0 then
-        local questLogIndex = GetQuestLogIndexByID(questID)
+        local questLogIndex = Quest.GetLogIndexByID(questID)
         if questLogIndex == 0 then
             if nameplate.liteQuestIcon then nameplate.liteQuestIcon:Hide() end
             return
         else
-            local isComplete = select(7, GetQuestLogTitle(questLogIndex))
+            local isComplete = select(7, Quest.GetLogTitle(questLogIndex))
             if isComplete then
                 if nameplate.liteQuestIcon then nameplate.liteQuestIcon:Hide() end
                 return
@@ -4907,7 +4873,7 @@ local function UpdateLiteQuestIcon(nameplate, unit)
     local atlas, desaturate
     
     -- Check for quest NPC (pickup/turnin) first
-    if not stringIsNilOrEmpty(talkToMe) then
+    if not Quest.isNilOrEmpty(talkToMe) then
         if not ns.c_showQuestNPCs then
             if nameplate.liteQuestIcon then nameplate.liteQuestIcon:Hide() end
             return
@@ -4999,10 +4965,17 @@ end
 ns.UpdateQuestIcon = UpdateQuestIcon
 ns.UpdateLiteQuestIcon = UpdateLiteQuestIcon
 ns.UpdateAllQuestIcons = UpdateAllQuestIcons
+-- Expose quest retry state cleanup for nameplate removal
+ns.ClearQuestRetryState = function(unit)
+    if unit then Quest.retryState[unit] = nil end
+end
 
 -- Full update for a plate (non-lite plates only)
 function ns:FullPlateUpdate(myPlate, unit)
     if not myPlate or not unit or not UnitExists(unit) then return end
+    
+    -- Clear stale quest retry state for this unit (fresh start)
+    Quest.retryState[unit] = nil
     
     -- Clear stale state from previous unit (plate recycling)
     if myPlate.questIcon then myPlate.questIcon:Hide() end
@@ -5218,17 +5191,16 @@ function ns:FullPlateUpdate(myPlate, unit)
             myPlate._lastPersonalY = ns.c_personalYOffset
         end
         
-        -- Personal health color - use threat coloring if enabled and applicable
-        local usedThreatColor = false
-        if ns.c_personalUseThreatColoring then
-            -- Get threat color for current target (if any and if threat applies)
-            local threatR, threatG, threatB = GetPersonalThreatColor()
-            if threatR and threatG and threatB then
-                myPlate.hp:SetStatusBarColor(threatR, threatG, threatB)
-                usedThreatColor = true
+        -- Personal health color - use class color if enabled, otherwise user-defined
+        if ns.c_personalUseClassColor then
+            local _, class = UnitClass("player")
+            if class then
+                local color = RAID_CLASS_COLORS[class]
+                if color then
+                    myPlate.hp:SetStatusBarColor(color.r, color.g, color.b)
+                end
             end
-        end
-        if not usedThreatColor then
+        else
             -- Use user-defined color (with fallback to green)
             local r = ns.c_personalHealthColor_r or 0
             local g = ns.c_personalHealthColor_g or 0.8
@@ -5582,8 +5554,12 @@ eventFrame:RegisterEvent("RAID_TARGET_UPDATE")
 eventFrame:RegisterEvent("UNIT_FACTION")
 eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 eventFrame:RegisterEvent("ARENA_OPPONENT_UPDATE")  -- Update arena name cache
-eventFrame:RegisterEvent("QUEST_LOG_UPDATE")       -- Quest log changed - update quest icons
-eventFrame:RegisterEvent("QUEST_QUERY_COMPLETE")   -- Quest query finished - update quest icons
+-- Quest events (verified to exist in Ascension FrameXML)
+eventFrame:RegisterEvent("QUEST_LOG_UPDATE")
+eventFrame:RegisterEvent("QUEST_QUERY_COMPLETE")
+eventFrame:RegisterEvent("QUEST_ACCEPTED")
+eventFrame:RegisterEvent("QUEST_POI_UPDATE")
+eventFrame:RegisterEvent("UNIT_QUEST_LOG_CHANGED")
 eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")  -- Nameplate appeared - check quest icon immediately
 eventFrame:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED")  -- Absorb shield changed
 eventFrame:RegisterEvent("UNIT_HEAL_PREDICTION")        -- Incoming heals changed
@@ -5668,7 +5644,6 @@ local function GetPersonalThrottle() return THROTTLE.personal * (ns.c_throttleMu
 local pendingPersonal = {
     health = false,
     power = false,
-    threat = false,
 }
 
 -- Process all pending personal bar updates in one batch
@@ -5678,7 +5653,6 @@ local function ProcessPersonalUpdates()
     if not ns.c_personalEnabled or not personalPlateRef then
         pendingPersonal.health = false
         pendingPersonal.power = false
-        pendingPersonal.threat = false
         return
     end
     
@@ -5721,22 +5695,6 @@ local function ProcessPersonalUpdates()
         end
         pendingPersonal.power = false
     end
-    
-    -- Update threat color (only when threat coloring is enabled)
-    -- Custom color is set in FullPlateUpdate and doesn't need continuous updates
-    if pendingPersonal.threat and myPlate.hp and ns.c_personalUseThreatColoring then
-        local threatR, threatG, threatB = GetPersonalThreatColor()
-        if threatR and threatG and threatB then
-            myPlate.hp:SetStatusBarColor(threatR, threatG, threatB)
-        else
-            -- No threat situation - restore custom color
-            local r = ns.c_personalHealthColor_r or 0
-            local g = ns.c_personalHealthColor_g or 0.8
-            local b = ns.c_personalHealthColor_b or 0
-            myPlate.hp:SetStatusBarColor(r, g, b)
-        end
-    end
-    pendingPersonal.threat = false
 end
 
 -- Schedule personal bar update (batches multiple updates together)
@@ -5757,6 +5715,8 @@ local function ProcessDirtyHealth()
         local nextUnit = next(dirtyHealth, unit)
         if IsNameplateUnit(unit) and UnitExists(unit) then
             UpdateHealth(unit)
+            -- Also update lite plate health (for name-only friendly plates)
+            UpdateLiteHealth(unit)
         end
         dirtyHealth[unit] = nil
         unit = nextUnit
@@ -5847,11 +5807,6 @@ eventFrame:SetScript("OnEvent", function(self, event, unit)
         if event == "PLAYER_TARGET_CHANGED" then
             ns.UpdateNameplateAlphas()
         end
-        -- Update personal bar threat color on target change (only if threat coloring is enabled)
-        if ns.c_personalEnabled and ns.c_personalUseThreatColoring and personalPlateRef then
-            pendingPersonal.threat = true
-            SchedulePersonalUpdate()
-        end
     elseif event == "RAID_TARGET_UPDATE" then
         -- Update raid icons for all active nameplates
         -- Note: This enumerates all nameplates, but RAID_TARGET_UPDATE is infrequent
@@ -5876,21 +5831,18 @@ eventFrame:SetScript("OnEvent", function(self, event, unit)
                 end
             end
         end
-    elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_QUERY_COMPLETE" then
-        -- Quest data changed - throttle updates (quest log can fire rapidly)
+    elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_QUERY_COMPLETE"
+           or event == "QUEST_ACCEPTED" or event == "QUEST_POI_UPDATE"
+           or event == "UNIT_QUEST_LOG_CHANGED" then
+        -- Quest data changed - throttle updates (quest events can fire rapidly)
         if not pendingTimers.quest then
             pendingTimers.quest = C_Timer_After(GetQuestThrottle(), ProcessQuestUpdate)
         end
     elseif event == "NAME_PLATE_UNIT_ADDED" then
-        -- Nameplate appeared - immediately check quest icon (handles API not ready on first frame)
+        -- Nameplate appeared - immediately check quest icon
+        -- UpdateQuestIcon has built-in exponential backoff retry if API not ready
         if unit and ns.c_questIconsEnabled then
             UpdateQuestIcon(unit)
-            -- Also schedule delayed check in case API wasn't ready
-            C_Timer_After(0.1, function()
-                if UnitExists(unit) then
-                    UpdateQuestIcon(unit)
-                end
-            end)
         end
     elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" then
         -- Absorb shield changed
@@ -5933,18 +5885,11 @@ eventFrame:SetScript("OnEvent", function(self, event, unit)
     elseif IsNameplateUnit(unit) then
         -- Throttled updates via C_Timer (safe from taint)
         if event == "UNIT_THREAT_SITUATION_UPDATE" or event == "UNIT_THREAT_LIST_UPDATE" then
-            -- Skip personal bar - it has its own threat handling via pendingPersonal.threat
+            -- Skip personal bar - class color doesn't change with threat
             local isPersonalPlate = personalPlateRef and UnitIsUnit(unit, "player")
             if not isPersonalPlate then
                 dirtyThreat[unit] = true
                 ScheduleThreatUpdate()
-            end
-            -- Schedule personal bar threat color update if threat changed on our target
-            if ns.c_personalEnabled and personalPlateRef then
-                if UnitIsUnit(unit, "target") then
-                    pendingPersonal.threat = true
-                    SchedulePersonalUpdate()
-                end
             end
         elseif event == "UNIT_FACTION" then
             -- FACTION CHANGE: Unit became hostile/friendly - re-evaluate entire plate type
