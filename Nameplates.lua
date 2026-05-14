@@ -3701,8 +3701,7 @@ local lastGroupRoleUpdate = 0
 -- Dynamic throttle getter (respects Potato PC mode)
 local function GetGroupRoleThrottle() return THROTTLE.groupRole * (ns.c_throttleMultiplier or 1) end
 
-local function RefreshGroupRoles(forceUpdate)
-    -- Only called on specific events: GROUP_ROSTER_UPDATE, READY_CHECK+10s, PLAYER_ENTERING_WORLD
+local function RefreshGroupRoles(forceUpdate, isRetry)
     local now = GetTime()
     
     -- Throttle full group scans (but allow forced updates)
@@ -3718,7 +3717,7 @@ local function RefreshGroupRoles(forceUpdate)
     
     -- Update player's tank status
     UpdatePlayerTankStatus()
-    
+
     if group.inGroup then
         -- Get Vigilance caster name once (cached for 5s)
         local vigilanceCaster = FindVigilanceCaster()
@@ -3767,11 +3766,10 @@ local function RefreshGroupRoles(forceUpdate)
         
         -- Include player in group roles
         local playerGUID = UnitGUID("player")
-        if playerGUID then
-            --group.roles[playerGUID] here was set in line 3720 and was overwritten if player was tank and not in LFG tool group with Roles
-            local playerRole = GetUnitRole("player")
+        if playerGUID then  
+			local playerRole = GetUnitRole("player")
 			-- Sync with UpdatePlayerTankStatus logic
-            if group.playerIsTank then
+			if group.playerIsTank then
 				playerRole = "TANK"
 			end
 
@@ -3781,6 +3779,11 @@ local function RefreshGroupRoles(forceUpdate)
                 group.roles[playerGUID] = "TANK"
             end
         end
+		if not isRetry then
+        C_Timer.After(2.5, function()
+            RefreshGroupRoles(true, true)
+        end)
+		end
     end
 end
 
