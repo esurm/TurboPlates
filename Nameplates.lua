@@ -3553,7 +3553,7 @@ local function GetVigilanceScanInterval() return THROTTLE.vigilance * (ns.c_thro
 -- Check if a unit has a tank aura active
 local function HasTankAura(unit)
     for i = 1, 40 do
-        local _, _, _, _, _, _, _, _, _, spellId = UnitBuff(unit, i)
+        local _, _, _, _, _, _, _, _, _, _, spellId = UnitBuff(unit, i)
         if not spellId then break end
         if TANK_AURAS[spellId] then return true end
     end
@@ -3578,7 +3578,7 @@ local function FindVigilanceCaster(forceRescan)
     
     local function ScanUnit(unit)
         for i = 1, 40 do
-            local _, _, _, _, _, _, _, caster, _, spellId = UnitBuff(unit, i)
+            local _, _, _, _, _, _, _, caster, _, _, spellId = UnitBuff(unit, i)
             if not spellId then return nil end
             if spellId == VIGILANCE_SPELL_ID and caster then
                 return UnitName(caster)
@@ -3701,8 +3701,7 @@ local lastGroupRoleUpdate = 0
 -- Dynamic throttle getter (respects Potato PC mode)
 local function GetGroupRoleThrottle() return THROTTLE.groupRole * (ns.c_throttleMultiplier or 1) end
 
-local function RefreshGroupRoles(forceUpdate)
-    -- Only called on specific events: GROUP_ROSTER_UPDATE, READY_CHECK+10s, PLAYER_ENTERING_WORLD
+local function RefreshGroupRoles(forceUpdate, isRetry)
     local now = GetTime()
     
     -- Throttle full group scans (but allow forced updates)
@@ -3718,7 +3717,7 @@ local function RefreshGroupRoles(forceUpdate)
     
     -- Update player's tank status
     UpdatePlayerTankStatus()
-    
+
     if group.inGroup then
         -- Get Vigilance caster name once (cached for 5s)
         local vigilanceCaster = FindVigilanceCaster()
@@ -3767,13 +3766,24 @@ local function RefreshGroupRoles(forceUpdate)
         
         -- Include player in group roles
         local playerGUID = UnitGUID("player")
-        if playerGUID then 
-            group.roles[playerGUID] = GetUnitRole("player")
+        if playerGUID then  
+			local playerRole = GetUnitRole("player")
+			-- Sync with UpdatePlayerTankStatus logic
+			if group.playerIsTank then
+				playerRole = "TANK"
+			end
+
+			group.roles[playerGUID] = playerRole
             -- Check if player is Vigilance caster
             if vigilanceCaster and UnitName("player") == vigilanceCaster then
                 group.roles[playerGUID] = "TANK"
             end
         end
+		if not isRetry then
+        C_Timer.After(2.5, function()
+            RefreshGroupRoles(true, true)
+        end)
+		end
     end
 end
 
@@ -4104,8 +4114,12 @@ UpdateColor = function(unit)
                 end
             end
         end
-        -- Fallback: green for friendlies without class color
-        myPlate.hp:SetStatusBarColor(0, 1, 0)
+        -- Fallback: Friendly Player = Blue, Friendly NPC = Green
+        if isPlayer then
+            myPlate.hp:SetStatusBarColor(0, 0.5, 1)  -- Blue
+        else
+            myPlate.hp:SetStatusBarColor(0, 1, 0)    -- Green
+        end
         return
     end
     
@@ -4533,7 +4547,7 @@ local function UpdateLevelText(unit)
         elseif ns.c_nameDisplayFormat == "disabled" then
             levelText:SetPoint("BOTTOM", myPlate.hp, "TOP", 0, PixelUtil.GetNearestPixelSize(3, 1))
         else
-            levelText:SetPoint("LEFT", myPlate.nameText, "RIGHT", PixelUtil.GetNearestPixelSize(2, 1), 0)
+            levelText:SetPoint("LEFT", myPlate.hp, "RIGHT", PixelUtil.GetNearestPixelSize(2, 1), 0)
         end
         levelText._lastPositionKey = positionKey
     end
@@ -5045,7 +5059,7 @@ function ns:FullPlateUpdate(myPlate, unit)
             myPlate.hp:SetValue(health)
             -- Color based on friendly/hostile
             if isFriendly then
-                myPlate.hp:SetStatusBarColor(0, 0.8, 0)  -- Green
+                myPlate.hp:SetStatusBarColor(0, 0.8, 0)  -- Green or blue
             else
                 myPlate.hp:SetStatusBarColor(0.8, 0, 0)  -- Red
             end
