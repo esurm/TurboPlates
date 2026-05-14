@@ -4111,8 +4111,12 @@ UpdateColor = function(unit)
                 end
             end
         end
-        -- Fallback: green for friendlies without class color
-        myPlate.hp:SetStatusBarColor(0, 1, 0)
+        -- Fallback: Friendly Player = Blue, Friendly NPC = Green
+        if isPlayer then
+            myPlate.hp:SetStatusBarColor(0, 0.5, 1)  -- Blue
+        else
+            myPlate.hp:SetStatusBarColor(0, 1, 0)    -- Green
+        end
         return
     end
     
@@ -4540,7 +4544,7 @@ local function UpdateLevelText(unit)
         elseif ns.c_nameDisplayFormat == "disabled" then
             levelText:SetPoint("BOTTOM", myPlate.hp, "TOP", 0, PixelUtil.GetNearestPixelSize(3, 1))
         else
-            levelText:SetPoint("LEFT", myPlate.nameText, "RIGHT", PixelUtil.GetNearestPixelSize(2, 1), 0)
+            levelText:SetPoint("LEFT", myPlate.hp, "RIGHT", PixelUtil.GetNearestPixelSize(2, 1), 0)
         end
         levelText._lastPositionKey = positionKey
     end
@@ -5052,7 +5056,7 @@ function ns:FullPlateUpdate(myPlate, unit)
             myPlate.hp:SetValue(health)
             -- Color based on friendly/hostile
             if isFriendly then
-                myPlate.hp:SetStatusBarColor(0, 0.8, 0)  -- Green
+                myPlate.hp:SetStatusBarColor(0, 0.8, 0)  -- Green or blue
             else
                 myPlate.hp:SetStatusBarColor(0.8, 0, 0)  -- Red
             end
