@@ -34,40 +34,40 @@ local function CreateTextureBorder(parent, thickness)
     if ns.CreateTextureBorder then
         return ns.CreateTextureBorder(parent, thickness)
     end
-    
+
     -- Fallback (shouldn't happen if load order is correct)
     thickness = thickness or 1
     local pixelSize = PixelUtil.GetNearestPixelSize(thickness, parent:GetEffectiveScale(), 1)
-    
+
     -- Use shared metatable if available, otherwise create minimal border
     local border = ns.BorderMethods and setmetatable({}, ns.BorderMethods) or {}
     local tex = ns.BORDER_TEX or "Interface\\Buttons\\WHITE8X8"
-    
+
     -- Use OVERLAY layer so borders render above StatusBar fill
     border.top = parent:CreateTexture(nil, "OVERLAY")
     border.top:SetTexture(tex)
     border.top:SetPoint("TOPLEFT", parent, "TOPLEFT", -pixelSize, pixelSize)
     border.top:SetPoint("TOPRIGHT", parent, "TOPRIGHT", pixelSize, pixelSize)
     PixelUtil.SetHeight(border.top, pixelSize, 1)
-    
+
     border.bottom = parent:CreateTexture(nil, "OVERLAY")
     border.bottom:SetTexture(tex)
     border.bottom:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", -pixelSize, -pixelSize)
     border.bottom:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", pixelSize, -pixelSize)
     PixelUtil.SetHeight(border.bottom, pixelSize, 1)
-    
+
     border.left = parent:CreateTexture(nil, "OVERLAY")
     border.left:SetTexture(tex)
     border.left:SetPoint("TOPLEFT", parent, "TOPLEFT", -pixelSize, 0)
     border.left:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", -pixelSize, 0)
     PixelUtil.SetWidth(border.left, pixelSize, 1)
-    
+
     border.right = parent:CreateTexture(nil, "OVERLAY")
     border.right:SetTexture(tex)
     border.right:SetPoint("TOPRIGHT", parent, "TOPRIGHT", pixelSize, 0)
     border.right:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", pixelSize, 0)
     PixelUtil.SetWidth(border.right, pixelSize, 1)
-    
+
     -- Only add methods if metatable not available
     if not ns.BorderMethods then
         local BORDER_ALPHA = ns.BORDER_ALPHA or 0.9
@@ -78,22 +78,22 @@ local function CreateTextureBorder(parent, thickness)
             self.left:SetVertexColor(r, g, b, a)
             self.right:SetVertexColor(r, g, b, a)
         end
-        
+
         function border:Show()
             self.top:Show(); self.bottom:Show()
             self.left:Show(); self.right:Show()
         end
-        
+
         function border:Hide()
             self.top:Hide(); self.bottom:Hide()
             self.left:Hide(); self.right:Hide()
         end
-        
+
         function border:GetColor()
             return self.top:GetVertexColor()
         end
     end
-    
+
     border:SetColor(0, 0, 0, ns.BORDER_ALPHA or 0.9)
     return border
 end
@@ -274,27 +274,27 @@ local function CreateAuraIcon(parent)
     local icon = CreateFrame("Frame", nil, parent)  -- No BackdropTemplate needed
     icon:SetSize(20, 20)
     icon:EnableMouse(false)  -- Pass through clicks
-    
+
     -- Icon texture fills frame (border extends outside via CreateTextureBorder)
     icon.texture = icon:CreateTexture(nil, "ARTWORK")
     icon.texture:SetAllPoints()
     icon.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)  -- 30% zoom
-    
+
     -- Pixel-perfect texture border (extends outside the frame)
     icon.border = CreateTextureBorder(icon, BORDER_SIZE)
-    
+
     -- Duration text (bottom center)
     icon.duration = icon:CreateFontString(nil, "OVERLAY")
     icon.duration:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
     icon.duration:SetPoint("BOTTOM", icon, "BOTTOM", 0, -2)
     icon.duration:SetTextColor(1, 1, 1)
-    
+
     -- Stack count (top right)
     icon.count = icon:CreateFontString(nil, "OVERLAY")
     icon.count:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
     icon.count:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 2, 2)
     icon.count:SetTextColor(1, 1, 1)
-    
+
     return icon
 end
 
@@ -369,7 +369,7 @@ end
 -- =============================================================================
 local function SetBorderColor(icon, debuffType, isPurgeable, isDebuff, isPersonal)
     local borderMode = isDebuff and ns.c_debuffBorderMode or ns.c_buffBorderMode
-    
+
     if borderMode == "DISABLED" then
         icon.border:SetColor(0, 0, 0, 0)  -- Fully transparent
     elseif borderMode == "CUSTOM" then
@@ -403,15 +403,15 @@ end
 -- =============================================================================
 local function UpdateDurationText(icon)
     local timeLeft = icon.expires - GetTime()
-    
+
     if timeLeft <= 0 then
         icon.duration:SetText("")
         return
     end
-    
+
     -- Use cached time string
     icon.duration:SetText(GetCachedTimeString(timeLeft))
-    
+
     -- Set color based on time remaining
     if timeLeft < 1 then
         icon.duration:SetTextColor(COLOR_RED[1], COLOR_RED[2], COLOR_RED[3])
@@ -434,10 +434,10 @@ end
 -- =============================================================================
 local function AuraTimerOnUpdate(icon, elapsed)
     icon.elapsed = icon.elapsed + elapsed
-    
+
     local timeLeft = icon.expires - GetTime()
     local multiplier = ns.c_throttleMultiplier or 1
-    
+
     -- Adaptive update interval (scaled by Potato PC mode)
     local interval
     if timeLeft <= 1 then
@@ -447,18 +447,91 @@ local function AuraTimerOnUpdate(icon, elapsed)
     else
         interval = 0.5 * multiplier    -- 2 FPS normally (1 FPS in Potato mode)
     end
-    
+
     if icon.elapsed < interval then return end
     icon.elapsed = 0
-    
+
     if timeLeft <= 0 then
         -- Aura expired - will be cleaned up on next UNIT_AURA
         icon.duration:SetText("")
         icon:SetScript("OnUpdate", nil)
         return
     end
-    
+
     UpdateDurationText(icon)
+end
+
+-- =============================================================================
+-- NAMEPLATE COLOR BY AURA
+-- Scans once during aura refresh and stores the chosen color on the plate.
+-- =============================================================================
+local auraColorMatchAny = {}
+local auraColorMatchOwn = {}
+
+local function CacheNameplateColorRule(rule)
+    if type(rule) ~= "table" then return end
+
+    local spellID = tonumber(rule.spellID)
+    local color = rule.color
+    if not spellID or spellID <= 0 or type(color) ~= "table" or color.r == nil then return end
+
+    ns.c_nameplateColorRules[#ns.c_nameplateColorRules + 1] = {
+        spellID = spellID,
+        ownOnly = rule.ownOnly == true,
+        color = {
+            r = tonumber(color.r) or 1,
+            g = tonumber(color.g) or 1,
+            b = tonumber(color.b) or 1,
+        },
+    }
+    ns.c_nameplateColorRuleSpellIDs[spellID] = true
+end
+
+local function ProcessNameplateColorAura(name, rank, icon, count, debuffType, duration, expires, caster, canStealOrPurge, _, spellID)
+    if spellID and ns.c_nameplateColorRuleSpellIDs and ns.c_nameplateColorRuleSpellIDs[spellID] then
+        auraColorMatchAny[spellID] = true
+        if caster == "player" then
+            auraColorMatchOwn[spellID] = true
+        end
+    end
+end
+
+function ns.UpdateNameplateAuraColorOverride(myPlate, unit)
+    if not myPlate then return false end
+
+    local rules = ns.c_nameplateColorRules
+    local previousColor = myPlate._auraColorOverride
+
+    if not unit or not UnitExists(unit) or not rules or #rules == 0 then
+        if previousColor then
+            myPlate._auraColorOverride = nil
+            return true
+        end
+        return false
+    end
+
+    wipe(auraColorMatchAny)
+    wipe(auraColorMatchOwn)
+
+    AuraUtil.ForEachAura(unit, "HELPFUL", 40, ProcessNameplateColorAura)
+    AuraUtil.ForEachAura(unit, "HARMFUL", 40, ProcessNameplateColorAura)
+
+    local nextColor = nil
+    for i = 1, #rules do
+        local rule = rules[i]
+        local spellID = rule.spellID
+        if auraColorMatchAny[spellID] and (not rule.ownOnly or auraColorMatchOwn[spellID]) then
+            nextColor = rule.color
+            break
+        end
+    end
+
+    if previousColor ~= nextColor then
+        myPlate._auraColorOverride = nextColor
+        return true
+    end
+
+    return false
 end
 
 -- =============================================================================
@@ -467,8 +540,9 @@ end
 -- =============================================================================
 function ns:CacheAuraSettings()
     local db = TurboPlatesDB
+    if db and not db.auras then db.auras = {} end
     local auras = db and db.auras or ns.defaults.auras
-    
+
     -- Debuffs
     ns.c_showDebuffs = auras.showDebuffs ~= false
     ns.c_maxDebuffs = auras.maxDebuffs or 6
@@ -480,7 +554,7 @@ function ns:CacheAuraSettings()
     ns.c_debuffYOffset = auras.debuffYOffset or 0
     ns.c_debuffDurationAnchor = auras.debuffDurationAnchor or "BOTTOM"
     ns.c_debuffStackAnchor = auras.debuffStackAnchor or "TOPRIGHT"
-    
+
     -- Buffs
     ns.c_showBuffs = auras.showBuffs ~= false
     ns.c_buffFilterMode = auras.buffFilterMode or "ONLY_DISPELLABLE"
@@ -498,32 +572,32 @@ function ns:CacheAuraSettings()
     ns.c_buffMinDuration = auras.buffMinDuration or 0
     ns.c_buffMaxDuration = auras.buffMaxDuration or 300
     ns.c_buffBorderMode = auras.buffBorderMode or "COLOR_CODED"
-    
+
     -- Duration filters (for debuffs)
     ns.c_minDuration = auras.minDuration or 0
     ns.c_maxDuration = auras.maxDuration or 300
-    
+
     -- Layout
     ns.c_growDirection = auras.growDirection or "CENTER"
     ns.c_iconSpacing = auras.iconSpacing or 2
     ns.c_debuffSortMode = auras.debuffSortMode or "LEAST_TIME"
     ns.c_buffSortMode = auras.buffSortMode or "LEAST_TIME"
-    
+
     -- Border modes
     ns.c_debuffBorderMode = auras.debuffBorderMode or "COLOR_CODED"
-    
+
     -- Custom border colors
     local debuffBorderCol = auras.debuffBorderColor or { r = 0.8, g = 0, b = 0 }
     ns.c_debuffBorderColor = { debuffBorderCol.r, debuffBorderCol.g, debuffBorderCol.b }
     local buffBorderCol = auras.buffBorderColor or { r = 0.2, g = 0.8, b = 0.2 }
     ns.c_buffBorderColor = { buffBorderCol.r, buffBorderCol.g, buffBorderCol.b }
-    
+
     -- Blacklist/Whitelist - ALWAYS reference DB tables directly for live updates
     -- Ensure tables exist in DB so references stay valid when user adds spells
     if db then
-        if not db.auras then db.auras = {} end
         if not db.auras.blacklist then db.auras.blacklist = {} end
         if not db.auras.whitelist then db.auras.whitelist = {} end
+        if type(db.auras.nameplateColorRules) ~= "table" then db.auras.nameplateColorRules = {} end
         ns.AuraBlacklist = db.auras.blacklist
         ns.AuraWhitelist = db.auras.whitelist
     else
@@ -531,7 +605,18 @@ function ns:CacheAuraSettings()
         ns.AuraBlacklist = {}
         ns.AuraWhitelist = {}
     end
-    
+
+    ns.c_nameplateColorRules = ns.c_nameplateColorRules or {}
+    ns.c_nameplateColorRuleSpellIDs = ns.c_nameplateColorRuleSpellIDs or {}
+    wipe(ns.c_nameplateColorRules)
+    wipe(ns.c_nameplateColorRuleSpellIDs)
+
+    if type(auras.nameplateColorRules) == "table" then
+        for _, rule in ipairs(auras.nameplateColorRules) do
+            CacheNameplateColorRule(rule)
+        end
+    end
+
     -- Refresh all visible plates with new settings (if API available)
     -- C_NamePlate.GetNamePlates may not exist during early addon loading
     if C_NamePlate.GetNamePlates then
@@ -553,6 +638,7 @@ end
 -- Buff Filter Modes (enemy plates only):
 --   ONLY_DISPELLABLE: Only dispellable buffs (bypass duration)
 --   WHITELIST_DISPELLABLE: Whitelisted + dispellable (both bypass duration)
+--   WHITELIST_ONLY: Only whitelisted buffs
 --   ALL: All buffs, whitelisted/dispellable bypass duration, others get duration filter
 -- Personal bar buffs: show ALL (only blacklist applies)
 -- =============================================================================
@@ -563,37 +649,37 @@ local function PassesFilters(spellID, duration, canStealOrPurge, auraType, debuf
     if rawget(ns.AuraBlacklist, spellID) then
         return false
     end
-    
-    -- 2. WHITELIST: Always accept (bypasses all other checks)
+
+    -- 2. WHITELIST: Apply inside each branch so buff filter modes stay distinct
     local isWhitelisted = rawget(ns.AuraWhitelist, spellID)
-    if isWhitelisted then return true end
-    
+
     -- For buffs: treat Magic-type as dispellable (isStealable flag is unreliable on player targets)
     local isDispellable = canStealOrPurge or (auraType == "buff" and debuffType == "Magic")
-    
+
     -- 3. PERSONAL BAR: Show player's own auras with duration filtering
     if currentIsPersonal then
-        
+        if isWhitelisted then return true end
+
         -- Debuffs: respect duration filters
         if auraType == "debuff" then
             local minDur = ns.c_minDuration
             local maxDur = ns.c_maxDuration
             local dur = duration or 0
-            
+
             -- Permanent debuffs (no duration) filtered if any duration filter is active
             if dur == 0 and (minDur > 0 or maxDur > 0) then return false end
-            
+
             if minDur > 0 and dur < minDur then return false end
             if maxDur > 0 and dur > maxDur then return false end
             return true
         end
-        
+
         -- Buffs: hide permanent (no duration) unless whitelisted
         -- This filters out passive/hidden auras that clutter the display
         if not duration or duration == 0 then
             return false
         end
-        
+
         -- Apply buff duration filter for personal bar buffs
         local minDur = ns.c_buffMinDuration
         local maxDur = ns.c_buffMaxDuration
@@ -601,25 +687,29 @@ local function PassesFilters(spellID, duration, canStealOrPurge, auraType, debuf
         if maxDur > 0 and duration > maxDur then return false end
         return true
     end
-    
+
     -- === ENEMY PLATES ONLY BELOW THIS POINT ===
-    
+
     -- 3. BUFF FILTERING (enemy buffs only)
     if auraType == "buff" then
         local filterMode = ns.c_buffFilterMode
-        
-        -- Dispellable buffs ALWAYS bypass duration check (in all modes)
-        -- Whitelisted buffs ALWAYS bypass duration check (in modes that use whitelist)
-        
+
+        -- Dispellable buffs bypass duration check in modes that allow dispellable buffs
+        -- Whitelisted buffs bypass duration check in modes that allow whitelist
+
         if filterMode == "ONLY_DISPELLABLE" then
             -- Only dispellable buffs allowed, they bypass duration
             return isDispellable
-            
+
         elseif filterMode == "WHITELIST_DISPELLABLE" then
             -- Whitelisted or dispellable passes
             if isWhitelisted or isDispellable then return true end
             return false  -- Non-dispellable, non-whitelisted rejected
-            
+
+        elseif filterMode == "WHITELIST_ONLY" then
+            -- Only whitelisted buffs allowed
+            return isWhitelisted
+
         else -- "ALL" (except blacklisted)
             -- Whitelisted bypasses duration check
             if isWhitelisted then return true end
@@ -627,7 +717,7 @@ local function PassesFilters(spellID, duration, canStealOrPurge, auraType, debuf
             if isDispellable then return true end
             -- Non-dispellable, non-whitelisted falls through to duration check
         end
-        
+
         -- Duration check for non-dispellable, non-whitelisted buffs only (ALL mode)
         local minDur = ns.c_buffMinDuration
         local maxDur = ns.c_buffMaxDuration
@@ -640,11 +730,11 @@ local function PassesFilters(spellID, duration, canStealOrPurge, auraType, debuf
         end
         return true
     end
-    
+
     -- 4. DEBUFF FILTERING (enemy debuffs = your DoTs)
     -- Whitelist bypasses all checks
     if isWhitelisted then return true end
-    
+
     -- Duration check for debuffs
     local minDur = ns.c_minDuration
     local maxDur = ns.c_maxDuration
@@ -655,7 +745,7 @@ local function PassesFilters(spellID, duration, canStealOrPurge, auraType, debuf
         -- Permanent aura - reject unless whitelisted (checked above)
         return false
     end
-    
+
     return true
 end
 
@@ -671,12 +761,12 @@ local currentTime = 0
 -- =============================================================================
 local function ProcessAuraCallback(name, rank, icon, count, debuffType, duration, expires, caster, canStealOrPurge, _, spellID)
     if not name then return end
-    
+
     -- Filter check (pass debuffType for Magic-type stealable fallback)
     if not PassesFilters(spellID, duration, canStealOrPurge, currentAuraType, debuffType) then
         return
     end
-    
+
     -- Acquire pooled data table
     local aura = AcquireAuraData()
     aura.name = name
@@ -690,7 +780,7 @@ local function ProcessAuraCallback(name, rank, icon, count, debuffType, duration
     aura.spellID = spellID
     aura.isDebuff = (currentAuraType == "debuff")
     aura.timeLeft = (expires and expires > 0) and (expires - currentTime) or 0
-    
+
     tinsert(currentCollector, aura)
 end
 
@@ -723,16 +813,16 @@ end
 -- =============================================================================
 local function PositionIcons(container, count, iconWidth, spacing, growDir)
     if count == 0 then return end
-    
+
     local outerWidth = iconWidth + (BORDER_SIZE * 2)
     local step = outerWidth + spacing
     local totalWidth = (count * outerWidth) + ((count - 1) * spacing)
-    
+
     for i = 1, count do
         local icon = container.icons[i]
         if icon then
             icon:ClearAllPoints()
-            
+
             if growDir == "CENTER" then
                 local xOffset = (i - 1) * step - (totalWidth / 2) + (outerWidth / 2)
                 icon:SetPoint("BOTTOM", container, "BOTTOM", xOffset, 0)
@@ -756,49 +846,49 @@ end
 local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, spacing, growDir, fontSize, stackFontSize, durationAnchor, stackAnchor, isPersonal)
     container.icons = container.icons or {}
     local icons = container.icons
-    
+
     -- Get anchor positions
     local durAnchor = DURATION_ANCHORS[durationAnchor] or DURATION_ANCHORS.BOTTOM
     local stkAnchor = STACK_ANCHORS[stackAnchor] or STACK_ANCHORS.TOPRIGHT
-    
+
     -- Release all current icons back to pool
     for i = #icons, 1, -1 do
         AuraPool:Release(icons[i])
         icons[i] = nil
     end
-    
+
     -- Acquire and configure icons for current auras
     local count = 0
     for i = 1, #auras do
         if count >= maxCount then break end
         local aura = auras[i]
         count = count + 1
-        
+
         local icon = AuraPool:Acquire(container)
         icons[count] = icon
-        
+
         -- Size
         icon:SetSize(iconWidth, iconHeight)
-        
+
         -- Texture
         icon.texture:SetTexture(GetCachedIcon(aura.spellID, aura.icon))
         icon.spellID = aura.spellID
-        
+
         -- Border color
         SetBorderColor(icon, aura.debuffType, aura.canStealOrPurge, aura.isDebuff, isPersonal)
-        
+
         -- Font sizes
         icon.duration:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
         icon.count:SetFont(STANDARD_TEXT_FONT, stackFontSize, "OUTLINE")
-        
+
         -- Duration text position
         icon.duration:ClearAllPoints()
         icon.duration:SetPoint(durAnchor[1], icon, durAnchor[2], durAnchor[3], durAnchor[4])
-        
+
         -- Stack count position
         icon.count:ClearAllPoints()
         icon.count:SetPoint(stkAnchor[1], icon, stkAnchor[2], stkAnchor[3], stkAnchor[4])
-        
+
         -- Stack count text
         if aura.count > 1 then
             icon.count:SetText(aura.count)
@@ -806,11 +896,11 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
         else
             icon.count:Hide()
         end
-        
+
         -- Duration/timer setup
         icon.expires = aura.expires
         icon.elapsed = 0
-        
+
         if aura.expires > 0 then
             icon:SetScript("OnUpdate", AuraTimerOnUpdate)
             icon._hasOnUpdate = true
@@ -820,13 +910,13 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
             icon.duration:SetText("")
             icon.duration:Hide()
         end
-        
+
         icon:Show()
     end
-    
+
     -- Store displayed count
     container.displayedCount = count
-    
+
     -- Position all icons
     PositionIcons(container, count, iconWidth, spacing, growDir)
 end
@@ -837,10 +927,18 @@ end
 function ns:UpdateAuras(myPlate, unit)
     -- Early exit: no unit or containers
     if not unit or not UnitExists(unit) then return end
+
+    if not myPlate.isPlayer then
+        local colorChanged = ns.UpdateNameplateAuraColorOverride(myPlate, unit)
+        if colorChanged and ns.UpdateColor then
+            ns.UpdateColor(unit)
+        end
+    end
+
     if not myPlate.debuffContainer then return end
-    
+
     local isPersonal = myPlate.isPlayer
-    
+
     -- === PERSONAL NAMEPLATE BRANCH ===
     if isPersonal then
         -- Early exit: personal bar disabled entirely
@@ -851,10 +949,10 @@ function ns:UpdateAuras(myPlate, unit)
             myPlate.buffContainer:Hide()
             return
         end
-        
+
         local showDebuffs = ns.c_personalShowDebuffs
         local showBuffs = ns.c_personalShowBuffs
-        
+
         -- Early exit: no auras enabled on personal bar
         if not showDebuffs and not showBuffs then
             AuraPool:ReleaseAll(myPlate.debuffContainer)
@@ -863,15 +961,15 @@ function ns:UpdateAuras(myPlate, unit)
             myPlate.buffContainer:Hide()
             return
         end
-        
+
         -- Set flag for PassesFilters (personal = show all, only blacklist applies)
         currentIsPersonal = true
         currentTime = GetTime()
-        
+
         -- Release previous aura data back to pool
         ReleaseAllAuraData(debuffCollector)
         ReleaseAllAuraData(buffCollector)
-        
+
         -- Collect personal debuffs (debuffs ON the player)
         if showDebuffs then
             currentAuraType = "debuff"
@@ -882,7 +980,7 @@ function ns:UpdateAuras(myPlate, unit)
             AuraPool:ReleaseAll(myPlate.debuffContainer)
             myPlate.debuffContainer:Hide()
         end
-        
+
         -- Collect personal buffs (all buffs on player)
         if showBuffs then
             currentAuraType = "buff"
@@ -893,14 +991,14 @@ function ns:UpdateAuras(myPlate, unit)
             AuraPool:ReleaseAll(myPlate.buffContainer)
             myPlate.buffContainer:Hide()
         end
-        
+
     -- === ENEMY NAMEPLATE BRANCH ===
     else
         -- Early exit: neither debuffs nor buffs enabled for enemy plates
         if not ns.c_showDebuffs and not ns.c_showBuffs then
             return
         end
-        
+
         -- Early exit: friendly units don't show auras
         if UnitIsFriend("player", unit) then
             AuraPool:ReleaseAll(myPlate.debuffContainer)
@@ -909,15 +1007,15 @@ function ns:UpdateAuras(myPlate, unit)
             myPlate.buffContainer:Hide()
             return
         end
-        
+
         -- Set flag for PassesFilters (enemy = use filter modes)
         currentIsPersonal = false
         currentTime = GetTime()
-        
+
         -- Release previous aura data back to pool
         ReleaseAllAuraData(debuffCollector)
         ReleaseAllAuraData(buffCollector)
-        
+
         -- Collect debuffs (HARMFUL|PLAYER = only your DoTs on enemy)
         if ns.c_showDebuffs then
             currentAuraType = "debuff"
@@ -928,7 +1026,7 @@ function ns:UpdateAuras(myPlate, unit)
             AuraPool:ReleaseAll(myPlate.debuffContainer)
             myPlate.debuffContainer:Hide()
         end
-        
+
         -- Collect buffs (enemy buffs, filtered by mode)
         if ns.c_showBuffs then
             currentAuraType = "buff"
@@ -940,7 +1038,7 @@ function ns:UpdateAuras(myPlate, unit)
             myPlate.buffContainer:Hide()
         end
     end
-    
+
     -- === SORT AURAS (skip if empty or single aura) ===
     if #debuffCollector > 1 then
         local sortFunc = ns.c_debuffSortMode == "MOST_RECENT" and SortByMostRecent or SortByTimeRemaining
@@ -950,7 +1048,7 @@ function ns:UpdateAuras(myPlate, unit)
         local sortFunc = ns.c_buffSortMode == "MOST_RECENT" and SortByMostRecent or SortByTimeRemaining
         sort(buffCollector, sortFunc)
     end
-    
+
     -- === DISPLAY (only for enabled containers) ===
     if isPersonal then
         if ns.c_personalShowDebuffs then
@@ -973,10 +1071,10 @@ function ns:UpdateAuras(myPlate, unit)
         if ns.c_showBuffs then
             DisplayAuras(myPlate.buffContainer, buffCollector, ns.c_maxBuffs, ns.c_buffIconWidth, ns.c_buffIconHeight, ns.c_buffIconSpacing, ns.c_buffGrowDirection, ns.c_buffFontSize, ns.c_buffStackFontSize, ns.c_buffDurationAnchor, ns.c_buffStackAnchor, false)
         end
-        
+
         -- Position containers immediately after display (displayedCount now accurate)
         ns:UpdateAuraPositions(myPlate)
-        
+
         -- Update healer icon position when aura counts change
         if ns.UpdateHealerIconPosition and myPlate.healerIcon and myPlate.healerIcon:IsShown() then
             ns:UpdateHealerIconPosition(myPlate)
@@ -993,18 +1091,18 @@ function ns:CreateAuraContainers(myPlate)
     myPlate.debuffContainer:SetSize(200, 30)
     myPlate.debuffContainer:EnableMouse(false)
     myPlate.debuffContainer.icons = {}
-    
+
     -- Buff container (enemy buffs)
     myPlate.buffContainer = CreateFrame("Frame", nil, myPlate)
     myPlate.buffContainer:SetSize(200, 30)
     myPlate.buffContainer:EnableMouse(false)
     myPlate.buffContainer.icons = {}
-    
+
     -- Release auras when plate hides
     myPlate:HookScript("OnHide", function(self)
         ns:CleanupPlateAuras(self)
     end)
-    
+
     -- Positioning deferred to FullPlateUpdate->UpdateAuraPositions
 end
 
@@ -1015,23 +1113,23 @@ end
 -- =============================================================================
 function ns:UpdateAuraPositions(myPlate)
     if not myPlate.debuffContainer then return end
-    
+
     -- Hide aura containers for friendly units (they don't show auras)
     if myPlate.isFriendly then
         myPlate.debuffContainer:Hide()
         myPlate.buffContainer:Hide()
         return
     end
-    
+
     -- === PERSONAL NAMEPLATE POSITIONING ===
     if myPlate.isPlayer then
         -- Skip positioning if personal bar disabled (containers hidden by UpdateAuras)
         if not ns.c_personalEnabled then return end
         if not ns.c_personalShowDebuffs and not ns.c_personalShowBuffs then return end
-        
+
         local hpBar = myPlate.hp
         if not hpBar then return end
-        
+
         -- Personal bar: anchor above power bar (or health bar if power disabled)
         local anchorOffset = 3  -- Base gap
         if ns.c_personalShowPower and myPlate.powerBar then
@@ -1041,13 +1139,13 @@ function ns:UpdateAuraPositions(myPlate)
                 anchorOffset = anchorOffset + (ns.c_personalAdditionalPowerHeight or 6) + 1
             end
         end
-        
+
         -- Position debuff container
         myPlate.debuffContainer:ClearAllPoints()
         local debuffX = ns.c_personalDebuffXOffset or 0
         local debuffY = (ns.c_personalDebuffYOffset or 0) + anchorOffset + BORDER_SIZE
         myPlate.debuffContainer:SetPoint("BOTTOM", hpBar, "TOP", debuffX, debuffY)
-        
+
         -- Position buff container above debuffs
         myPlate.buffContainer:ClearAllPoints()
         local debuffIconCount = myPlate.debuffContainer.displayedCount or 0
@@ -1057,30 +1155,30 @@ function ns:UpdateAuraPositions(myPlate)
             buffY = buffY + (ns.c_debuffIconHeight or 20) + 4
         end
         myPlate.buffContainer:SetPoint("BOTTOM", hpBar, "TOP", buffX, buffY)
-        
+
         -- Update personal bar border based on debuff status
         if ns.UpdatePersonalBorder then
             ns:UpdatePersonalBorder()
         end
         return
     end
-    
+
     -- Show containers (they may have been hidden by totem mode or friendly state)
     myPlate.debuffContainer:Show()
     myPlate.buffContainer:Show()
-    
+
     -- Determine if name is enabled (for Y positioning)
     -- Use cached config setting (more reliable than IsShown() which may have timing issues)
     local nameEnabled = ns.c_nameDisplayFormat and ns.c_nameDisplayFormat ~= "disabled"
     local hpBar = myPlate.hp
     if not hpBar then return end  -- No valid anchor yet
-    
+
     -- Calculate Y offset to clear the name if it's visible
     -- Name is 3px above hp, add name height + 3 to clear it
     local nameHeightOffset = 0
     if nameEnabled and myPlate.nameText then
         local nameHeight = myPlate.nameText:GetStringHeight()
-        
+
         -- GetStringHeight() returns 0 on first frame before text is laid out
         -- If height is 0 or nil, schedule a deferred re-position after layout completes
         if not nameHeight or nameHeight < 1 then
@@ -1096,10 +1194,10 @@ function ns:UpdateAuraPositions(myPlate)
             -- Use a reasonable default for now (will be corrected next frame)
             nameHeight = 12
         end
-        
+
         nameHeightOffset = nameHeight + 3  -- 3px is the gap between hp and name
     end
-    
+
     -- Position debuff container based on grow direction
     -- LEFT = align with left edge of healthbar, grow right
     -- RIGHT = align with right edge of healthbar, grow left
@@ -1110,7 +1208,7 @@ function ns:UpdateAuraPositions(myPlate)
     -- Use fallback defaults (0) for XOffset/YOffset in case cache isn't initialized yet
     local debuffX = ns.c_debuffXOffset or 0
     local debuffY = (ns.c_debuffYOffset or 0) + nameHeightOffset + BORDER_SIZE
-    
+
     if debuffGrowDir == "LEFT" then
         myPlate.debuffContainer:SetPoint("BOTTOMLEFT", hpBar, "TOPLEFT", debuffX, debuffY)
     elseif debuffGrowDir == "RIGHT" then
@@ -1118,7 +1216,7 @@ function ns:UpdateAuraPositions(myPlate)
     else
         myPlate.debuffContainer:SetPoint("BOTTOM", hpBar, "TOP", debuffX, debuffY)
     end
-    
+
     -- Position buff container above debuffs (if visible) or at same level
     myPlate.buffContainer:ClearAllPoints()
     local debuffIconCount = myPlate.debuffContainer.displayedCount or 0
@@ -1126,12 +1224,12 @@ function ns:UpdateAuraPositions(myPlate)
     -- Use fallback defaults (0) for XOffset/YOffset in case cache isn't initialized yet
     local buffX = ns.c_buffXOffset or 0
     local buffY = (ns.c_buffYOffset or 0) + nameHeightOffset + BORDER_SIZE
-    
+
     if debuffIconCount > 0 and ns.c_showDebuffs then
         -- Stack buffs above debuffs with 4px gap between rows (use height for vertical stacking)
         buffY = buffY + (ns.c_debuffIconHeight or 20) + 4
     end
-    
+
     local buffGrowDir = ns.c_buffGrowDirection or "CENTER"
     if buffGrowDir == "LEFT" then
         myPlate.buffContainer:SetPoint("BOTTOMLEFT", hpBar, "TOPLEFT", buffX, buffY)
@@ -1158,22 +1256,22 @@ end
 -- =============================================================================
 local function SetupAuraEvents()
     local eventFrame = CreateFrame("Frame")
-    
+
     -- Aura batch interval (respects Potato PC mode)
     -- Base: 0.05s (50ms), Potato: 0.1s (100ms)
     local auraBatchInterval = 0.05 * (ns.c_throttleMultiplier or 1)
-    
+
     -- Use C_Hook batching for efficient event handling
     C_Hook:RegisterBucket(eventFrame, "UNIT_AURA", auraBatchInterval, function(events)
         -- Dedupe units (same unit may fire multiple times)
         wipe(batchUnitsToUpdate)
         pendingPlayerAura = false  -- Reset player flag
-        
+
         -- Track player auras for personal bar display
         local trackPlayerAurasForDisplay = ns.c_personalEnabled and (ns.c_personalShowDebuffs or ns.c_personalShowBuffs)
         -- Always track player debuffs for border coloring (cheap cache update)
         local trackPlayerDebuffs = ns.c_personalEnabled and ns.c_personalBorderStyle and ns.c_personalBorderStyle ~= "none" and ns.c_personalBorderStyle ~= "black"
-        
+
         for _, args in ipairs(events) do
             local unit = args[1]
             if unit then
@@ -1184,7 +1282,7 @@ local function SetupAuraEvents()
                 end
             end
         end
-        
+
         -- Process each unique nameplate unit once
         for unit in pairs(batchUnitsToUpdate) do
             local nameplate = GetNamePlateForUnit(unit)
@@ -1204,7 +1302,7 @@ local function SetupAuraEvents()
                 end
             end
         end
-        
+
         -- Process player aura update (personal bar) - already checked enabled above
         if pendingPlayerAura then
             local personalPlate = ns.unitToPlate and ns.unitToPlate["player"]
@@ -1229,7 +1327,7 @@ end
 local function Initialize()
     -- Cache aura settings
     ns:CacheAuraSettings()
-    
+
     -- Setup event batching
     SetupAuraEvents()
 end

@@ -17,7 +17,7 @@ ns.L = {
     TabPersonal = "Personal Bar",
     TabCP = "Combo Points",
     TabTurboDebuffs = "TurboDebuffs",
-    
+
     -- Personal Bar
     PersonalBarEnable = "Enable Personal Resource Bar",
     PersonalBarEnableDesc = "Show your own nameplate with health and power bars",
@@ -46,7 +46,7 @@ ns.L = {
     TabMisc = "Misc Options",
     TabStacking = "Plate Stacking",
     TabProfiles = "Profiles",
-    
+
     -- Import/Export (Profiles Tab)
     ImportExportHeader = "Import / Export Settings",
     ImportExportDesc = "Export your settings to share with others, or import a settings string to apply someone else's configuration.",
@@ -65,7 +65,7 @@ ns.L = {
     ImportEmpty = "Please paste a settings string first.",
     CopySuccess = "Copied to clipboard!",
     CopyEmpty = "Nothing to copy. Export first.",
-    
+
     -- Stacking Tab
     StackingHeader = "Nameplate Stacking:",
     StackingEnable = "Enable Nameplate Stacking",
@@ -93,15 +93,15 @@ ns.L = {
     StackingOriginPosDesc = "Base nameplate height above mob (0%=none, 100%=default, 200%=high)",
     StackingUpperBorder = "Screen Top Margin",
     StackingUpperBorderDesc = "Distance from screen top that plates cannot cross (lower = more screen use)",
-    
+
     -- Non-Target Alpha
     NonTargetAlpha = "Non-Target Alpha",
     NonTargetAlphaDesc = "Opacity of non-targeted nameplates when you have a target (0% = invisible, 100% = fully visible)",
-    
+
     -- Potato PC Mode
     PotatoPCMode = "Potato PC Mode",
     PotatoPCModeDesc = "Reduces CPU usage by halving update frequencies. Recommended for older or slow PCs.",
-    
+
     -- Auras Tab
     AurasShowDebuffs = "Enable Debuff Tracking",
     AurasOwnOnly = "Own Only",
@@ -114,6 +114,7 @@ ns.L = {
     AurasShowBuffs = "Enable Buff Tracking",
     AurasBuffFilterOnlyDispellable = "Only Dispellable",
     AurasBuffFilterWhitelistDispellable = "Whitelist + Dispellable",
+    AurasBuffFilterWhitelistOnly = "Whitelist Only",
     AurasBuffFilterAll = "All (except Blacklisted)",
     AurasBuffFilterDisabled = "Disabled",
     AurasMaxBuffs = "Max Buffs",
@@ -145,7 +146,7 @@ ns.L = {
     AurasBorderColorCoded = "Color Coded",
     AurasBorderDispellable = "Dispellable",
     AurasBorderCustom = "Custom Color",
-    
+
     -- Text Anchor Options
     AurasDurationAnchor = "Timer Anchor",
     AurasStackAnchor = "Stack Anchor",
@@ -155,12 +156,12 @@ ns.L = {
     AurasAnchorBottom = "Bottom",
     AurasAnchorBottomLeft = "Bottom Left",
     AurasAnchorBottomRight = "Bottom Right",
-    
+
     -- Aura Colors (Colors Tab)
     AuraColors = "Aura Colors:",
     DebuffBorderColor = "Debuff Border",
     BuffBorderColor = "Buff Border",
-    
+
     -- Spell List Manager
     SpellListHeader = "Spell Filters",
     AuraBlacklist = "Aura Blacklist",
@@ -180,7 +181,13 @@ ns.L = {
     SpellAdded = "Spell added",
     SpellRemoved = "Spell removed",
     ListCleared = "List cleared",
-    
+    CustomAuraNameplateColor = "Custom Nameplate Color by Aura (Priority List)",
+    CustomAuraNameplateColorDesc = "First matching buff/debuff rule overrides the nameplate health bar color.",
+    AuraColorSpellID = "Spell ID",
+    AuraColorOwnOnly = "Own Only",
+    AuraColorAddRule = "Add Rule",
+    AuraColorNoRules = "No aura color rules",
+
     -- General Tab (CVar Controls)
     ShowNameplatesFor = "Show Nameplates for:",
     FriendlyUnits = "Friendly Units",
@@ -210,11 +217,11 @@ ns.L = {
     HighlightSpells = "Highlight Spells",
     HighlightSpellsDesc = "Spells with custom highlight",
     NoHighlightSpells = "No spells configured",
-    
-    
+
+
     -- General Options Section
     GeneralOptionsHeader = "Friendly Nameplates:",
-    
+
     -- PvP Section
     PvPHeader = "PvP:",
     ClassColoredHealth = "Class Colored Health",
@@ -223,7 +230,7 @@ ns.L = {
     HealerMarks = "Arena/BG: Healer Icons",
     TargetingMeIndicator = "Arena: Targeting Me Indicator",
     TargetingMeColor = "(Arena) Targeting Me",
-    
+
     -- Quest Objectives
     ShowQuestNPCs = "Show Quest NPCs",
     ShowQuestObjectives = "Show Quest Objectives",
@@ -255,7 +262,7 @@ ns.L = {
     TankModeEnabled = "Always On",
     FriendlyFontSize = "Friendly Name-Only Size",
     GuildFontSize = "Friendly Guild Name Size",
-    
+
     -- Tank Mode Colors
     TankColors = "Tank Mode Colors:",
     CastbarColors = "Castbar Colors:",
@@ -266,13 +273,13 @@ ns.L = {
     TransColor = "Losing",
     InsecureColor = "Lost",
     OffTankColor = "Off-Tank",
-    
+
     -- DPS Mode Colors
     DpsColors = "DPS/Healer Colors:",
     DpsSecureColor = "Safe",
     DpsTransColor = "Warning",
     DpsAggroColor = "Aggro",
-    
+
     -- Target/PvP Colors
     TargetPvPColors = "Target/PvP Colors:",
 
@@ -280,7 +287,7 @@ ns.L = {
     FontSize = "Nameplate Name Size",
     FontOutline = "Font Outline",
     NameDisplayFormat = "Name Display Format",
-    
+
     -- Health Value Display
     HealthValueFormat = "Health Value Format",
     HealthValueFontSize = "Health Value Font Size",
@@ -577,13 +584,13 @@ ns.defaults = {
     levelMode = "all",  -- disabled, enemies, all
     -- Classification icon
     classificationAnchor = "TOPLEFT",  -- disabled, TOPLEFT, TOPRIGHT, TOP, BOTTOM, BOTTOMLEFT, BOTTOMRIGHT
-    
+
     -- Threat text display
     threatTextAnchor = "disabled",  -- disabled, right_hp, left_hp, below_hp, top_hp, left_name, right_name
     threatTextFontSize = 10,
     threatTextOffsetX = 2,
     threatTextOffsetY = 0,
-    
+
     -- === PERSONAL RESOURCE BAR ===
     personal = {
         enabled = false,  -- Disabled by default (also controls CVar)
@@ -608,7 +615,7 @@ ns.defaults = {
         yOffset = 0,
         borderStyle = "removable",  -- removable, black, debuff, debuff_only, none
     },
-    
+
     -- === AURA TRACKING ===
     auras = {
         -- Debuffs (Your DoTs on enemies) - HARMFUL|PLAYER filter
@@ -623,10 +630,10 @@ ns.defaults = {
         debuffBorderMode = "COLOR_CODED",  -- DISABLED, COLOR_CODED, CUSTOM
         debuffDurationAnchor = "BOTTOM",  -- TOP, TOPLEFT, TOPRIGHT, CENTER, BOTTOM, BOTTOMLEFT, BOTTOMRIGHT
         debuffStackAnchor = "TOPLEFT",   -- TOP, TOPLEFT, TOPRIGHT, CENTER, BOTTOM, BOTTOMLEFT, BOTTOMRIGHT
-        
+
         -- Buffs (Enemy buffs you can purge/steal)
         showBuffs = true,
-        buffFilterMode = "ONLY_DISPELLABLE",  -- ONLY_DISPELLABLE, WHITELIST_DISPELLABLE, ALL
+        buffFilterMode = "ONLY_DISPELLABLE",  -- ONLY_DISPELLABLE, WHITELIST_DISPELLABLE, WHITELIST_ONLY, ALL
         maxBuffs = 4,
         buffIconWidth = 18,
         buffIconHeight = 18,
@@ -641,28 +648,29 @@ ns.defaults = {
         buffMinDuration = 0,
         buffMaxDuration = 600,
         buffBorderMode = "COLOR_CODED",  -- DISABLED, COLOR_CODED, CUSTOM
-        
+
         -- Duration filters (for debuffs)
         minDuration = 0,       -- 0 = no minimum
         maxDuration = 0,       -- 0 = no maximum (unlimited)
-        
+
         -- Layout
         growDirection = "CENTER",  -- CENTER, LEFT, RIGHT
         iconSpacing = 2,
-        
+
         -- Sorting (LEAST_TIME or MOST_RECENT)
         debuffSortMode = "LEAST_TIME",
         buffSortMode = "MOST_RECENT",
-        
+
         -- Custom border colors
         debuffBorderColor = { r = 0.8, g = 0, b = 0 },  -- Red
         buffBorderColor = { r = 0.2, g = 0.8, b = 0.2 },  -- Green
-        
+
         -- Blacklist/Whitelist (spellID tables)
         blacklist = {},
         whitelist = {},
+        nameplateColorRules = {},
     },
-    
+
     -- === NAMEPLATE STACKING ===
     stacking = {
         enabled = false,          -- Custom stacking disabled by default
@@ -680,26 +688,26 @@ ns.defaults = {
         -- Limits
         maxPlates = 60,
     },
-    
+
     -- === TURBO DEBUFFS (BigDebuffs-style priority aura) ===
     turboDebuffs = {
         enabled = false,  -- Disabled by default (niche feature)
         showFriendly = false,  -- Show on friendly nameplates
-        
+
         -- Full plates settings
         size = 32,
         anchor = "RIGHT",
         xOffset = 0,
         yOffset = 0,
         timerSize = 22,
-        
+
         -- Name-only plates settings
         nameOnlyAnchor = "RIGHT",
         nameOnlySize = 24,
         nameOnlyTimerSize = 16,
         nameOnlyXOffset = 0,
         nameOnlyYOffset = 0,
-        
+
         -- Category toggles
         immunities = true,
         cc = true,
@@ -711,7 +719,7 @@ ns.defaults = {
         buffs_offensive = true,
         buffs_other = true,
         snare = true,
-        
+
         -- Category priorities
         priority = {
             immunities = 80,
@@ -740,7 +748,7 @@ end
 
 function ns:LoadVariables()
     if not TurboPlatesDB then TurboPlatesDB = {} end
-    
+
     for k, v in pairs(ns.defaults) do
         if TurboPlatesDB[k] == nil then
             TurboPlatesDB[k] = DeepCopy(v)
@@ -752,7 +760,7 @@ function ns:LoadVariables()
             end
         end
     end
-    
+
     -- Migrate font from path to LSM name
     if TurboPlatesDB.font and TurboPlatesDB.font:find("\\") then
         for _, f in ipairs(ns.Fonts) do
@@ -766,7 +774,7 @@ function ns:LoadVariables()
             TurboPlatesDB.font = "Friz Quadrata"
         end
     end
-    
+
     -- Migrate texture from path to LSM name
     if TurboPlatesDB.texture and TurboPlatesDB.texture:find("\\") then
         for _, t in ipairs(ns.Textures) do
@@ -780,12 +788,12 @@ function ns:LoadVariables()
             TurboPlatesDB.texture = "Clean"
         end
     end
-    
+
     -- Validate texture (now LSM name)
     if not TurboPlatesDB.texture or TurboPlatesDB.texture == "" then
         TurboPlatesDB.texture = ns.defaults.texture
     end
-    
+
     -- Validate color tables
     if type(TurboPlatesDB.hpColor) ~= "table" or not TurboPlatesDB.hpColor.r then
         TurboPlatesDB.hpColor = DeepCopy(ns.defaults.hpColor)
@@ -838,9 +846,12 @@ function ns:LoadVariables()
     if type(TurboPlatesDB.highlightGlowColor) ~= "table" or not TurboPlatesDB.highlightGlowColor.r then
         TurboPlatesDB.highlightGlowColor = DeepCopy(ns.defaults.highlightGlowColor)
     end
-    
+    if type(TurboPlatesDB.auras) == "table" and type(TurboPlatesDB.auras.nameplateColorRules) ~= "table" then
+        TurboPlatesDB.auras.nameplateColorRules = DeepCopy(ns.defaults.auras.nameplateColorRules)
+    end
+
     -- Update cached db reference
-    if ns.UpdateDBCache then 
+    if ns.UpdateDBCache then
         ns:UpdateDBCache()
     end
 end

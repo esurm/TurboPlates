@@ -82,35 +82,74 @@ do
     local abs = math.abs
     local floor = math.floor
     local GetTime = GetTime
-    
-    local function UpdateAlphaAndLevel(nameplate, parent)
-        local a
-        local isPersonal = nameplate.isPlayer
-        if not isPersonal then
-            if ns.currentTargetGUID and ns.c_nonTargetAlpha and ns.c_nonTargetAlpha < 1 then
-                local isTarget = nameplate.cachedGUID == ns.currentTargetGUID
-                a = isTarget and 1.0 or ns.c_nonTargetAlpha
-            else
-                a = 1.0
-            end
-            -- Combine with engine parent alpha (occlusion via nameplateIntersectOpacity)
-            -- De-occlusion is buffered by 1 frame to filter engine raycast noise
-            local parentAlpha = parent:GetAlpha()
-            if parentAlpha < a then
-                a = parentAlpha
-                nameplate._occluded = true
-            elseif nameplate._occluded then
-                -- Was occluded, now visible: hold occluded alpha 1 more frame
+    local FULL_ALPHA = 1
+    local ALPHA_EPSILON = 0.025
+
+    local function ClampAlpha(alpha)
+        if not alpha then return FULL_ALPHA end
+        if alpha < 0 then return 0 end
+        if alpha > FULL_ALPHA then return FULL_ALPHA end
+        return alpha
+    end
+
+    local function GetIntersectOpacity()
+        return ClampAlpha(C_CVar.GetNumber("nameplateIntersectOpacity"))
+    end
+
+    local function IsConfiguredOcclusionAlpha(parentAlpha, intersectAlpha)
+        if intersectAlpha >= FULL_ALPHA then return false end
+        if intersectAlpha <= ALPHA_EPSILON then
+            return parentAlpha <= ALPHA_EPSILON
+        end
+        return abs(parentAlpha - intersectAlpha) <= ALPHA_EPSILON
+    end
+
+    -- Ascension parent alpha is composite: LOS opacity plus hardcoded target dimming.
+    -- TurboPlates owns target dimming, so only the configured LOS CVar is inherited.
+    function ns.ResolveNameplateAlpha(nameplate, parentAlpha, reason, scheduleRefresh)
+        if nameplate.isPlayer then
+            return parentAlpha
+        end
+
+        local alpha
+        if ns.currentTargetGUID and ns.c_nonTargetAlpha and ns.c_nonTargetAlpha < FULL_ALPHA then
+            local isTarget = nameplate.cachedGUID == ns.currentTargetGUID
+            alpha = isTarget and FULL_ALPHA or ns.c_nonTargetAlpha
+        else
+            alpha = FULL_ALPHA
+        end
+
+        local intersectAlpha = GetIntersectOpacity()
+        local isConfiguredOcclusion = reason ~= "target" and IsConfiguredOcclusionAlpha(parentAlpha, intersectAlpha)
+        if isConfiguredOcclusion then
+            nameplate._occluded = true
+            nameplate._deoccluding = nil
+            return parentAlpha
+        end
+
+        if nameplate._occluded then
+            local canTreatAsDeoccluded = parentAlpha >= FULL_ALPHA or reason == "motion" or reason == "retry"
+            if canTreatAsDeoccluded then
                 nameplate._occluded = nil
                 nameplate._deoccluding = true
-                a = nameplate:GetAlpha()
-            elseif nameplate._deoccluding then
-                nameplate._deoccluding = nil
+                if scheduleRefresh then
+                    scheduleRefresh()
+                end
             end
-        else
-            a = parent:GetAlpha()
+            return nameplate:GetAlpha()
+        elseif nameplate._deoccluding then
+            nameplate._deoccluding = nil
         end
-        
+
+        return alpha
+    end
+
+    local function UpdateAlphaAndLevel(nameplate, parent, reason)
+        local function ScheduleRefresh()
+            RunNextFrame(function() UpdateAlphaAndLevel(nameplate, parent, "retry") end)
+        end
+        local a = ns.ResolveNameplateAlpha(nameplate, parent:GetAlpha(), reason or "refresh", ScheduleRefresh)
+
         if a ~= nameplate:GetAlpha() then
             nameplate:SetAlpha(a)
         end
@@ -119,81 +158,82 @@ do
             nameplate:SetFrameLevel(level)
         end
     end
-    
+
     local function SmoothMoveNameplate(nameplate, x, y)
         -- Skip if position unchanged
         if nameplate.x == x and nameplate.y == y then
             return
         end
-        
+
         -- Skip ClearAllPoints - just update the existing point
         -- Engine handles re-anchoring without full invalidation
         nameplate:SetPoint("CENTER", WorldFrame, "BOTTOMLEFT", x, y)
         nameplate.x, nameplate.y = x, y
     end
-    
+
     local function OnSizeChangedHandler(self, newX, newY)
         SmoothMoveNameplate(self.nameplate, newX, newY)
-        UpdateAlphaAndLevel(self.nameplate, self.parent)
+        UpdateAlphaAndLevel(self.nameplate, self.parent, "motion")
     end
-    
+
     local function DeferredAlphaUpdate(movementCallback)
-        UpdateAlphaAndLevel(movementCallback.nameplate, movementCallback.parent)
+        UpdateAlphaAndLevel(movementCallback.nameplate, movementCallback.parent, "retry")
     end
-    
+
     -- Batched alpha update system
     local pendingAlphaUpdates = {}
     local pendingAlphaTimer = nil
-    
+
     local function ProcessPendingAlphaUpdates()
         pendingAlphaTimer = nil
         local frame = next(pendingAlphaUpdates)
         while frame do
             local nextFrame = next(pendingAlphaUpdates, frame)
             if frame.nameplate and frame.parent then
-                UpdateAlphaAndLevel(frame.nameplate, frame.parent)
+                local reason = pendingAlphaUpdates[frame]
+                UpdateAlphaAndLevel(frame.nameplate, frame.parent, reason == true and "refresh" or reason)
             end
             pendingAlphaUpdates[frame] = nil
             frame = nextFrame
         end
     end
-    
+
     local function OnEventHandler(self)
-        pendingAlphaUpdates[self] = true
+        pendingAlphaUpdates[self] = "target"
         if not pendingAlphaTimer then
             pendingAlphaTimer = true
             RunNextFrame(ProcessPendingAlphaUpdates)
         end
     end
-    
+
     local function InitializeMovementCallback(movementCallback)
         local nameplate = movementCallback.nameplate
         local wasRemoved = not nameplate:IsShown()
-        
+
         nameplate:SetParent(WorldFrame)
         nameplate:ClearAllPoints()
-        
+
         -- Initial position
         local x, y = movementCallback:GetSize()
         nameplate:SetPoint("CENTER", WorldFrame, "BOTTOMLEFT", x, y)
         nameplate.x, nameplate.y = x, y
-        
+
         -- OnSizeChanged updates position and syncs alpha/level
         movementCallback:SetScript("OnSizeChanged", OnSizeChangedHandler)
-        
-        -- PLAYER_TARGET_CHANGED: Sync alpha immediately when target changes
+
+        -- PLAYER_TARGET_CHANGED: Sync TurboPlates alpha without inheriting engine target dim
         movementCallback:RegisterEvent("PLAYER_TARGET_CHANGED")
         movementCallback:SetScript("OnEvent", OnEventHandler)
-        
+
         if wasRemoved then
             -- Plate was removed during deferred init — ensure it stays hidden
             nameplate:Hide()
         else
             -- Set correct alpha immediately (plate was hidden during deferred init)
-            UpdateAlphaAndLevel(nameplate, movementCallback.parent)
+            UpdateAlphaAndLevel(nameplate, movementCallback.parent, "motion")
         end
     end
-    
+
     C_NamePlateManager.ApplyFPSIncrease = function(nameplate)
         local nameplateFrame = nameplate:GetParent()
         if C_CVar.GetBool("highPrecisionNameplates") then
@@ -201,7 +241,7 @@ do
             return
         end
         if nameplate.movementCallback then return end
-        
+
         -- Sync visibility when Blizzard plate hides (fixes orphaned plates)
         -- Use hooksecurefunc instead of HookScript to avoid taint during combat
         hooksecurefunc(nameplateFrame, "Hide", function()
@@ -211,23 +251,24 @@ do
             -- Only show if the Blizzard frame has an active unit assigned.
             -- Engine reuses frames: Show fires before NAME_PLATE_UNIT_ADDED
             -- is processed, which would show myPlate at a stale position.
-            if nameplateFrame._unit then
+            local unit = nameplateFrame._unit
+            if unit and UnitExists(unit) then
                 nameplate:Show()
             end
         end)
-        
+
         local movementCallback = CreateFrame("Frame", nil, nameplate)
         movementCallback:EnableMouse(false)
         nameplate.movementCallback = movementCallback
-        
+
         movementCallback.nameplate = nameplate
         movementCallback.parent = nameplateFrame
         movementCallback:SetPoint("BOTTOMLEFT", WorldFrame)
         movementCallback:SetPoint("TOPRIGHT", nameplateFrame, "CENTER")
-        
+
         -- Hide during deferred init to prevent 1-frame flash
         nameplate:SetAlpha(0)
-        
+
         -- Defer initialization to next frame (using pre-defined function, not inline closure)
         local callback = movementCallback
         RunNextFrame(function() InitializeMovementCallback(callback) end)
@@ -248,6 +289,8 @@ Core:RegisterEvent("PLAYER_LEVEL_UP")  -- Refresh level text when player levels 
 
 ns.Core = Core
 ns.unitToPlate = {}     -- [unit] = myPlate (used for fast unit->plate lookups)
+ns.unitToNameplate = {} -- [unit] = Blizzard nameplate frame (used to recover missed removals)
+ns.unitToNameplateGUID = {} -- [unit] = GUID captured when the nameplate was added
 ns.GuildDisplayCache = {} -- [guildName] = "<GuildName>" (cached formatted strings)
 ns.deferredDisable = {} -- Nameplates that need DisableBlizzPlate called after combat
 
@@ -407,14 +450,14 @@ turboHiddenParent:Hide()
 -- Safe during combat since secure attributes aren't touched
 local function HideBlizzardElements(nameplate)
     if nameplate._turboBlizzHidden then return end
-    
+
     -- Capture all regions into table FIRST, then iterate
     -- Re-calling GetRegions() each iteration causes index shift when reparenting
     local blizzElements = {nameplate:GetRegions()}
     local healthBar, castBar = nameplate:GetChildren()
     if healthBar then tinsert(blizzElements, healthBar) end
     if castBar then tinsert(blizzElements, castBar) end
-    
+
     for _, child in ipairs(blizzElements) do
         if child then
             child:SetParent(turboHiddenParent)
@@ -427,7 +470,7 @@ local function HideBlizzardElements(nameplate)
             end
         end
     end
-    
+
     nameplate._turboBlizzHidden = true
 end
 
@@ -437,10 +480,10 @@ local function SafeDisableBlizzPlate(unit, nameplate)
         nameplate = GetNamePlateForUnit(unit)
     end
     if not nameplate then return end
-    
+
     -- If already properly disabled via API (attribute set), nothing to do
     if nameplate:GetAttribute("disabled-blizz-plate") then return end
-    
+
     if InCombatLockdown() then
         -- During combat: manually hide elements (no SetAttribute = no taint)
         HideBlizzardElements(nameplate)
@@ -452,13 +495,109 @@ local function SafeDisableBlizzPlate(unit, nameplate)
     end
 end
 
+local OnNamePlateRemoved
+local RunGuardedNameplateCleanup
+local guardedNameplateCleanupScheduled = false
+local GUARDED_NAMEPLATE_CLEANUP_INTERVAL = 0.5
+
+local function ClearTrackedNameplate(unit, nameplate)
+    if not unit then return end
+
+    if not nameplate or ns.unitToNameplate[unit] == nameplate then
+        ns.unitToNameplate[unit] = nil
+        ns.unitToNameplateGUID[unit] = nil
+    end
+
+    if nameplate and nameplate._turboTrackedUnit == unit then
+        nameplate._turboTrackedUnit = nil
+        nameplate._turboTrackedGUID = nil
+    end
+end
+
+local function ClearUnitPlateLookup(unit, nameplate)
+    if not unit then return end
+
+    local myPlate = nameplate and nameplate.myPlate
+    if not myPlate or ns.unitToPlate[unit] == myPlate then
+        ns.unitToPlate[unit] = nil
+    end
+end
+
+local function ScheduleGuardedNameplateCleanup()
+    if guardedNameplateCleanupScheduled then return end
+    guardedNameplateCleanupScheduled = true
+    C_Timer.After(GUARDED_NAMEPLATE_CLEANUP_INTERVAL, RunGuardedNameplateCleanup)
+end
+
+local function TrackNameplate(unit, nameplate)
+    if not unit or not nameplate then return end
+
+    local oldUnit = nameplate._turboTrackedUnit
+    if oldUnit and oldUnit ~= unit then
+        ClearTrackedNameplate(oldUnit, nameplate)
+        if ns.unitToPlate[oldUnit] == nameplate.myPlate then
+            ns.unitToPlate[oldUnit] = nil
+        end
+    end
+
+    local guid = UnitGUID(unit)
+    nameplate._turboTrackedUnit = unit
+    nameplate._turboTrackedGUID = guid
+    ns.unitToNameplate[unit] = nameplate
+    ns.unitToNameplateGUID[unit] = guid
+
+    ScheduleGuardedNameplateCleanup()
+end
+
+RunGuardedNameplateCleanup = function()
+    guardedNameplateCleanupScheduled = false
+
+    local unit, nameplate = next(ns.unitToNameplate)
+    while unit do
+        local nextUnit = next(ns.unitToNameplate, unit)
+        local expectedGUID = ns.unitToNameplateGUID[unit]
+
+        if not nameplate then
+            ClearTrackedNameplate(unit)
+            ClearUnitPlateLookup(unit)
+        else
+            local currentUnit = nameplate._unit
+
+            if currentUnit == unit then
+                if not UnitExists(unit) then
+                    OnNamePlateRemoved(nil, unit, nameplate)
+                else
+                    local currentGUID = UnitGUID(unit)
+                    if expectedGUID and currentGUID and currentGUID ~= expectedGUID then
+                        ns.unitToNameplateGUID[unit] = currentGUID
+                        nameplate._turboTrackedGUID = currentGUID
+                    end
+                end
+            elseif not currentUnit then
+                OnNamePlateRemoved(nil, unit, nameplate)
+            else
+                -- The base frame has already been recycled for another live unit.
+                ClearTrackedNameplate(unit, nameplate)
+                ClearUnitPlateLookup(unit, nameplate)
+            end
+        end
+
+        unit = nextUnit
+        nameplate = unit and ns.unitToNameplate[unit]
+    end
+
+    if next(ns.unitToNameplate) then
+        ScheduleGuardedNameplateCleanup()
+    end
+end
+
 -- Note: Cached settings are stored in ns.c_* (set by Nameplates.lua:UpdateDBCache)
 -- Core.lua uses ns.c_font, ns.c_friendlyFontSize, ns.c_guildFontSize, ns.c_fontOutline, ns.c_raidMarkerSize
 
 Core:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         ns:LoadVariables()  -- Also calls UpdateDBCache() at the end (sets ns.c_* cache)
-        
+
         -- Force disable problematic Ascension nameplate CVars that conflict with TurboPlates
         -- These cause visual glitches and performance issues with custom nameplate addons
         if C_CVar then
@@ -466,46 +605,47 @@ Core:SetScript("OnEvent", function(self, event, ...)
             C_CVar.Set("highPrecisionNameplates", false)  -- High-Precision Nameplates
             -- Note: ShowClassColorInNameplate is handled by our own classColoredHealth setting
             -- Note: DrawNameplateClickBox is user-controllable via options, not forced here
-            
+
             -- Custom stacking requires nameplateAllowOverlap to be enabled
             if ns.c_stackingEnabled then
                 C_CVar.Set("nameplateAllowOverlap", 1)
             end
             -- Note: nameplateNotSelectedAlpha/nameplateMinAlpha don't exist in Ascension.
-            -- Engine occlusion (nameplateIntersectOpacity) is respected via min(a, parent:GetAlpha()).
+            -- Raw parent alpha is composite; TurboPlates only treats configured
+            -- nameplateIntersectOpacity as LOS opacity.
         end
-        
+
         -- Enable nameplate resizing so Clickable Width/Height sliders work
         if C_NamePlateManager and C_NamePlateManager.SetEnableResizeNamePlates then
             C_NamePlateManager.SetEnableResizeNamePlates(true)
         end
-        
+
         -- Initialize clickable area cache from CVars (avoids per-plate CVar lookups)
         ns.clickableWidth = C_CVar.GetNumber("nameplateWidth") or 110
         ns.clickableHeight = C_CVar.GetNumber("nameplateHeight") or 30
-        
+
         -- Initialize tall boss fix (extends WorldFrame for tall boss nameplates)
         if ns.InitTallBossFix then
             ns.InitTallBossFix()
         end
-        
+
         -- Initialize custom stacking system
         if ns.UpdateStacking then
             ns.UpdateStacking()
         end
-        
+
         -- Initialize TurboDebuffs (BigDebuffs-style priority aura)
         if ns.InitTurboDebuffs then
             ns:InitTurboDebuffs()
         end
-        
+
         -- Apply non-target alpha to any existing nameplates (delayed to ensure all are created)
         C_Timer.After(0.1, function()
             if ns.UpdateNameplateAlphas then
-                ns.UpdateNameplateAlphas()
+                ns.UpdateNameplateAlphas("refresh")
             end
         end)
-        
+
         -- Delayed quest icon refresh (API may not be ready immediately at login)
         -- Similar to Plater's 4.1s delay for QuestLogUpdated
         C_Timer.After(3, function()
@@ -513,7 +653,7 @@ Core:SetScript("OnEvent", function(self, event, ...)
                 ns.UpdateAllQuestIcons()
             end
         end)
-        
+
         -- Check for incompatible nameplate addons
         -- Special case: Ascension_NamePlates is controlled by CVar, not addon list
         if C_CVar.GetBool("useNewNameplates") then
@@ -533,7 +673,7 @@ Core:SetScript("OnEvent", function(self, event, ...)
                 end
             end
         end
-        
+
         local version = GetAddOnMetadata(addonName, "Version") or "1.0.0"
         print("Boosted by |cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r v" .. version .. " - /tp for config")
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -558,7 +698,7 @@ Core:SetScript("OnEvent", function(self, event, ...)
         -- Player leveled up - update cached level and refresh all nameplate level text
         local newLevel = ...
         ns.c_playerLevel = newLevel or UnitLevel("player")
-        
+
         -- Refresh all visible nameplates to update level display
         for unit, myPlate in pairs(ns.unitToPlate) do
             if myPlate and myPlate.levelText then
@@ -575,27 +715,27 @@ end)
 -- Does NOT call DisableBlizzPlate - that's handled separately at nameplate level
 local function SetupLiteContainer(container, nameplate)
     local defaultFont = "Fonts\\FRIZQT__.TTF"
-    
+
     container:EnableMouse(false)
-    
+
     local txt = container:CreateFontString(nil, "OVERLAY")
     txt:SetFont(defaultFont, 12, "OUTLINE")
     txt:SetPoint("CENTER", container, "CENTER", 0, 0)
     txt:SetJustifyV("MIDDLE")
     container.liteNameText = txt
-    
+
     local guild = container:CreateFontString(nil, "OVERLAY")
     guild:SetFont(defaultFont, 10, "OUTLINE")
     guild:SetPoint("TOP", txt, "BOTTOM", 0, -1)
     guild:SetTextColor(0.8, 0.8, 0.8)
     guild:Hide()
     container.liteGuildText = guild
-    
+
     local icon = container:CreateTexture(nil, "OVERLAY")
     icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
     icon:Hide()
     container.liteRaidIcon = icon
-    
+
     -- Level text for lite plates (anchored right of name)
     local levelText = container:CreateFontString(nil, "OVERLAY")
     levelText:SetFont(defaultFont, 12, "OUTLINE")
@@ -604,7 +744,7 @@ local function SetupLiteContainer(container, nameplate)
     levelText:SetJustifyV("MIDDLE")
     levelText:Hide()
     container.liteLevelText = levelText
-    
+
     -- Lite health bar (shown when damaged) - size scales with friendlyFontSize
     local friendlySize = ns.c_friendlyFontSize or 12
     local hpWidth = math.floor(friendlySize * 5)   -- Width proportional to font size
@@ -616,12 +756,12 @@ local function SetupLiteContainer(container, nameplate)
     liteHP:SetStatusBarColor(0, 1, 0)
     liteHP:Hide()
     container.liteHealthBar = liteHP
-    
+
     -- Lite health bar background
     local liteHPBG = liteHP:CreateTexture(nil, "BACKGROUND")
     liteHPBG:SetAllPoints()
     liteHPBG:SetColorTexture(0, 0, 0, 0.7)
-    
+
     -- Lite health text - scales with friendlyFontSize
     local liteHPText = liteHP:CreateFontString(nil, "OVERLAY")
     local fontSize = math.max(7, math.floor(friendlySize * 0.75))
@@ -629,7 +769,7 @@ local function SetupLiteContainer(container, nameplate)
     liteHPText:SetPoint("CENTER", liteHP, "CENTER", 0, 0)
     liteHPText:SetTextColor(1, 1, 1)
     container.liteHealthText = liteHPText
-    
+
     container:SetParent(nameplate)
     container:SetAllPoints()
     container:SetFrameLevel(nameplate:GetFrameLevel() + 1)
@@ -641,13 +781,15 @@ local function OnNamePlateAdded(_, unit, nameplate)
     if not nameplate and unit then
         nameplate = GetNamePlateForUnit(unit)
     end
-    if not nameplate then return end
-    
+    if not unit or not nameplate then return end
+
+    TrackNameplate(unit, nameplate)
+
     -- Apply static clamp for tall boss fix (when stacking is OFF)
     if ns.OnNameplateAddedForClamp then
         ns.OnNameplateAddedForClamp(nameplate, unit)
     end
-    
+
     -- TAINT FIX: Check if this nameplate has EVER been initialized by TurboPlates
     -- If NEITHER liteContainer NOR myPlate exists, this is a brand new nameplate frame
     -- Use SafeDisableBlizzPlate which won't taint during combat
@@ -655,12 +797,12 @@ local function OnNamePlateAdded(_, unit, nameplate)
     if needsInit then
         SafeDisableBlizzPlate(unit, nameplate)
     end
-    
+
     local isFriendly = UnitIsFriend("player", unit)
-    
+
     -- Never use lite plate for player's own personal nameplate
     local isPersonalPlate = UnitIsUnit(unit, "player")
-    
+
     -- Check if unit is a pet or totem (for including in friendly name-only mode)
     local isPetOrTotem = false
     local isTotem = false
@@ -668,7 +810,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         isTotem = UnitCreatureType(unit) == "Totem"
         isPetOrTotem = UnitIsPet(unit) or isTotem
     end
-    
+
     -- Check if Gladdy is handling this totem - skip our processing entirely
     if isTotem and nameplate.gladdyTotemFrame and nameplate.gladdyTotemFrame.active then
         -- Gladdy is handling this totem - hide our elements and return
@@ -676,22 +818,23 @@ local function OnNamePlateAdded(_, unit, nameplate)
         if nameplate.liteContainer then nameplate.liteContainer:Hide() end
         return
     end
-    
+
     -- ULTRA-LIGHTWEIGHT: Friendly name-only uses a single FontString, no myPlate frame
     -- NEVER apply to personal nameplate - it always needs full plate treatment
     local useLitePlate = isFriendly and ns.c_friendlyNameOnly and not isPersonalPlate
     if isPetOrTotem and isFriendly and ns.c_friendlyNameOnly then
         useLitePlate = true
     end
-    
+
     if useLitePlate then
         -- Hide full plate if it exists from previous non-friendly use
         if nameplate.myPlate then
+            nameplate.myPlate._auraColorOverride = nil
             nameplate.myPlate:Hide()
         end
         -- Clear unit lookup since lite plates don't use unitToPlate
         ns.unitToPlate[unit] = nil
-        
+
         -- Create lite container if it doesn't exist
         local container = nameplate.liteContainer
         if not container then
@@ -699,16 +842,16 @@ local function OnNamePlateAdded(_, unit, nameplate)
             SetupLiteContainer(container, nameplate)
             nameplate.liteContainer = container
         end
-        
+
         -- References for convenience
         local txt = container.liteNameText
         local guild = container.liteGuildText
         local icon = container.liteRaidIcon
-        
+
         nameplate.liteNameText = txt
         nameplate.liteGuildText = guild
         nameplate.liteRaidIcon = icon
-        
+
         -- Font caching - only call SetFont if settings changed
         if txt._lastFont ~= ns.c_font or txt._lastSize ~= ns.c_friendlyFontSize or txt._lastOutline ~= ns.c_fontOutline then
             txt:SetFont(ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
@@ -716,19 +859,19 @@ local function OnNamePlateAdded(_, unit, nameplate)
             txt._lastSize = ns.c_friendlyFontSize
             txt._lastOutline = ns.c_fontOutline
         end
-        
+
         if guild._lastFont ~= ns.c_font or guild._lastSize ~= ns.c_guildFontSize or guild._lastOutline ~= ns.c_fontOutline then
             guild:SetFont(ns.c_font, ns.c_guildFontSize, ns.c_fontOutline)
             guild._lastFont = ns.c_font
             guild._lastSize = ns.c_guildFontSize
             guild._lastOutline = ns.c_fontOutline
         end
-        
+
         -- Cache unit data on nameplate to avoid re-querying
         local name = nameplate._cachedName
         local isPlayer = nameplate._cachedIsPlayer
         local cachedClass = nameplate._cachedClass
-        
+
         -- Only query if not cached or unit changed
         if not name then
             name = UnitName(unit) or ""
@@ -741,10 +884,10 @@ local function OnNamePlateAdded(_, unit, nameplate)
                 nameplate._cachedClass = class
             end
         end
-        
+
         local displayName = ns.FormatName and ns:FormatName(name) or name
         txt:SetText(displayName)
-        
+
         -- Class color for players (use cached class)
         if isPlayer and cachedClass then
             local classColor = RAID_CLASS_COLORS[cachedClass]
@@ -756,9 +899,9 @@ local function OnNamePlateAdded(_, unit, nameplate)
         else
             txt:SetTextColor(0, 1, 0)
         end
-        
+
         txt:Show()
-        
+
         -- Guild text for players (if enabled) - use cached guild
         local showSubtitle = false
         if isPlayer and ns.c_friendlyGuild then
@@ -797,7 +940,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         else
             guild:Hide()
         end
-        
+
         -- Reposition name text based on guild visibility
         -- When guild is shown, push name up so guild appears at the original center position
         if showSubtitle then
@@ -822,7 +965,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
                 container.liteHealthBar._lastAnchorKey = anchorKey
             end
         end
-        
+
         -- Update lite raid icon (initialize cache values for UpdateAllPlates)
         local raidIndex = GetRaidTargetIndex(unit)
         if raidIndex then
@@ -836,7 +979,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         else
             icon:Hide()
         end
-        
+
         -- Update lite level text (only if mode is "all" since lite plates are friendly)
         local levelText = container.liteLevelText
         if levelText then
@@ -858,7 +1001,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
                         levelText:SetPoint("LEFT", txt, "RIGHT", PixelUtil.GetNearestPixelSize(2, 1), 0)
                         levelText._positioned = true
                     end
-                    
+
                     local color
                     if level <= 0 then
                         color = GetQuestDifficultyColor(999)
@@ -874,34 +1017,34 @@ local function OnNamePlateAdded(_, unit, nameplate)
                 levelText:Hide()
             end
         end
-        
+
         -- Update lite quest icon
         if ns.UpdateLiteQuestIcon then
             ns.UpdateLiteQuestIcon(nameplate, unit)
         end
-        
+
         -- Update TurboDebuff for lite plates
         if ns.UpdateLiteTurboDebuff then
             ns:UpdateLiteTurboDebuff(nameplate, unit)
         end
-        
+
         -- Update healer icon for lite plates
         if ns.UpdateLiteHealerIcon then
             ns:UpdateLiteHealerIcon(container, unit)
         end
-        
+
         -- Update lite health bar when damaged
         if ns.c_liteHealthWhenDamaged and container.liteHealthBar then
             ns:UpdateLiteHealthBar(container, unit)
         elseif container.liteHealthBar then
             container.liteHealthBar:Hide()
         end
-        
+
         container:Show()
         nameplate._isLite = true
         return
     end
-    
+
     -- Non-lite path: hide lite container if exists, including lite quest icon
     if nameplate.liteContainer then
         nameplate.liteContainer:Hide()
@@ -918,7 +1061,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         ns:HideLiteTurboDebuff(nameplate)
     end
     nameplate._isLite = false
-    
+
     -- Create full plate frame (once, reused) - DisableBlizzPlate already called above if needed
     if not nameplate.myPlate then
         if ns.CreatePlateFrame then
@@ -928,12 +1071,12 @@ local function OnNamePlateAdded(_, unit, nameplate)
             end
         end
     end
-    
+
     -- Update and show
     if nameplate.myPlate then
         nameplate.myPlate.unit = unit
         nameplate.myPlate.cachedGUID = UnitGUID(unit)
-        
+
         -- Hide personal bar elements BEFORE showing to prevent one-frame flash
         if nameplate.myPlate.powerBar then
             nameplate.myPlate.powerBar:Hide()
@@ -941,7 +1084,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
         if nameplate.myPlate.additionalPowerBar then
             nameplate.myPlate.additionalPowerBar:Hide()
         end
-        
+
         -- Pre-sync position for recycled plates (already on WorldFrame)
         -- to prevent 1-frame flash at the old world position
         local mc = nameplate.myPlate.movementCallback
@@ -952,23 +1095,23 @@ local function OnNamePlateAdded(_, unit, nameplate)
                 nameplate.myPlate.x, nameplate.myPlate.y = x, y
             end
         end
-        
+
         nameplate.myPlate:Show()
         ns.unitToPlate[unit] = nameplate.myPlate
-        
+
         if ns.FullPlateUpdate then
             ns:FullPlateUpdate(nameplate.myPlate, unit)
         end
-        
+
         -- Initial TurboDebuff update (don't wait for UNIT_AURA batch)
         if ns.UpdateTurboDebuff then
             ns:UpdateTurboDebuff(nameplate.myPlate, unit)
         end
-        
+
         if ns.CheckExistingCast then
             ns:CheckExistingCast(unit)
         end
-        
+
         -- Validate target plate in case this newly added plate is the target
         -- (handles case where target's plate appears after target was selected)
         if ns.ValidateTargetPlate then
@@ -978,10 +1121,18 @@ local function OnNamePlateAdded(_, unit, nameplate)
 end
 
 -- Hide frames when nameplate removed (frames are reused)
-local function OnNamePlateRemoved(_, unit, nameplate)
+OnNamePlateRemoved = function(_, unit, nameplate)
+    local trackedNameplate = unit and ns.unitToNameplate[unit]
     if not nameplate and unit then
-        nameplate = GetNamePlateForUnit(unit)
+        nameplate = trackedNameplate
     end
+
+    if unit and nameplate and nameplate._unit and nameplate._unit ~= unit then
+        ClearTrackedNameplate(unit, nameplate)
+        ClearUnitPlateLookup(unit, nameplate)
+        return
+    end
+
     if unit then
         -- Clean up castbar BEFORE clearing unit mapping (so lookup works)
         if ns.CleanupCastbar then
@@ -991,7 +1142,8 @@ local function OnNamePlateRemoved(_, unit, nameplate)
         if ns.ClearQuestRetryState then
             ns.ClearQuestRetryState(unit)
         end
-        ns.unitToPlate[unit] = nil
+        ClearUnitPlateLookup(unit, nameplate)
+        ClearTrackedNameplate(unit, nameplate)
         -- Clear personal plate reference if this was the player's nameplate
         if UnitIsUnit(unit, "player") and ns.ClearPersonalPlateRef then
             ns:ClearPersonalPlateRef()
@@ -1004,7 +1156,7 @@ local function OnNamePlateRemoved(_, unit, nameplate)
         nameplate._cachedClass = nil
         nameplate._cachedGuild = nil
         nameplate._cachedNPCID = nil
-        
+
         if nameplate.liteContainer then
             nameplate.liteContainer:Hide()
             -- Hide lite healer icon
@@ -1017,6 +1169,7 @@ local function OnNamePlateRemoved(_, unit, nameplate)
             ns:HideLiteTurboDebuff(nameplate)
         end
         if nameplate.myPlate then
+            nameplate.myPlate._auraColorOverride = nil
             -- Clear stale plate reference before recycling (keep GUID - target still exists)
             if nameplate.myPlate == ns.currentTargetPlate then
                 ns.currentTargetPlate = nil
@@ -1134,10 +1287,10 @@ end
 -- Update lite health bar (shared between OnNamePlateAdded and UNIT_HEALTH updates)
 function ns:UpdateLiteHealthBar(container, unit)
     if not container or not container.liteHealthBar then return end
-    
+
     local health = UnitHealth(unit)
     local maxHealth = UnitHealthMax(unit)
-    
+
     if health < maxHealth and maxHealth > 0 then
         local liteHP = container.liteHealthBar
         liteHP:SetMinMaxValues(0, maxHealth)
@@ -1164,49 +1317,50 @@ function ns:UpdateLiteHealthBar(container, unit)
 end
 
 function ns:UpdateAllPlates()
-    
+
     for nameplate in EnumerateActiveNamePlates() do
         local unit = nameplate._unit
         if unit and UnitExists(unit) then
             local isFriendly = UnitIsFriend("player", unit)
-            
+
             -- Never use lite plate for player's own personal nameplate
             local isPersonalPlate = UnitIsUnit(unit, "player")
-            
+
             local isPetOrTotem = false
             if not UnitIsPlayer(unit) then
                 isPetOrTotem = UnitIsPet(unit) or (UnitCreatureType(unit) == "Totem")
             end
-            
+
             -- NEVER apply lite plate to personal nameplate
             local useLitePlate = isFriendly and ns.c_friendlyNameOnly and not isPersonalPlate
             if isPetOrTotem and isFriendly and ns.c_friendlyNameOnly then
                 useLitePlate = true
             end
-            
+
             if useLitePlate then
-                if nameplate.myPlate then 
+                if nameplate.myPlate then
+                    nameplate.myPlate._auraColorOverride = nil
                     nameplate.myPlate:Hide()
                     -- Clear unitToPlate mapping when switching to lite mode
                     ns.unitToPlate[unit] = nil
                 end
                 nameplate._isLite = true
-                
+
                 local container = nameplate.liteContainer
                 if not container then
                     container = CreateFrame("Frame", nil, nameplate)
                     SetupLiteContainer(container, nameplate)
                     nameplate.liteContainer = container
                 end
-                
+
                 local txt = container.liteNameText
                 local guild = container.liteGuildText
                 local icon = container.liteRaidIcon
-                
+
                 nameplate.liteNameText = txt
                 nameplate.liteGuildText = guild
                 nameplate.liteRaidIcon = icon
-                
+
                 -- Lite name font caching
                 if txt._lastFont ~= ns.c_font or txt._lastSize ~= ns.c_friendlyFontSize or txt._lastOutline ~= ns.c_fontOutline then
                     txt:SetFont(ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
@@ -1251,11 +1405,11 @@ function ns:UpdateAllPlates()
                         container.liteHealthText._lastOutline = outline
                     end
                 end
-                
+
                 local name = UnitName(unit) or ""
                 local displayName = ns.FormatName and ns:FormatName(name) or name
                 txt:SetText(displayName)
-                
+
                 local isPlayer = UnitIsPlayer(unit)
                 local class
                 if isPlayer then
@@ -1267,7 +1421,7 @@ function ns:UpdateAllPlates()
                 else
                     txt:SetTextColor(0, 1, 0)
                 end
-                
+
                 txt:Show()
 
                 local showSubtitle = false
@@ -1303,7 +1457,7 @@ function ns:UpdateAllPlates()
                 else
                     guild:Hide()
                 end
-                
+
                 -- Reposition name text based on guild visibility
                 if showSubtitle then
                     local guildHeight = ns.c_guildFontSize + 1
@@ -1327,7 +1481,7 @@ function ns:UpdateAllPlates()
                         container.liteHealthBar._lastAnchorKey = anchorKey
                     end
                 end
-                
+
                 local raidIndex = GetRaidTargetIndex(unit)
                 if raidIndex then
                     -- Size caching
@@ -1346,7 +1500,7 @@ function ns:UpdateAllPlates()
                 else
                     icon:Hide()
                 end
-                
+
                 -- Update lite level text (only if mode is "all" since lite plates are friendly)
                 local levelText = container.liteLevelText
                 if levelText then
@@ -1369,7 +1523,7 @@ function ns:UpdateAllPlates()
                                 levelText:SetPoint("LEFT", txt, "RIGHT", PixelUtil.GetNearestPixelSize(2, 1), 0)
                                 levelText._positioned = true
                             end
-                            
+
                             local color
                             if level <= 0 then
                                 color = GetQuestDifficultyColor(999)
@@ -1385,17 +1539,17 @@ function ns:UpdateAllPlates()
                         levelText:Hide()
                     end
                 end
-                
+
                 -- Update lite quest icon
                 if ns.UpdateLiteQuestIcon then
                     ns.UpdateLiteQuestIcon(nameplate, unit)
                 end
-                
+
                 -- Update TurboDebuff for lite plates
                 if ns.UpdateLiteTurboDebuff then
                     ns:UpdateLiteTurboDebuff(nameplate, unit)
                 end
-                
+
                 -- Update lite health bar when damaged
                 if ns.c_liteHealthWhenDamaged and container.liteHealthBar then
                     local health = UnitHealth(unit)
@@ -1420,7 +1574,7 @@ function ns:UpdateAllPlates()
                 elseif container.liteHealthBar then
                     container.liteHealthBar:Hide()
                 end
-                
+
                 container:Show()
             else
                 if nameplate.liteContainer then
@@ -1434,7 +1588,7 @@ function ns:UpdateAllPlates()
                     ns:HideLiteTurboDebuff(nameplate)
                 end
                 nameplate._isLite = false
-                
+
                 -- Create full plate if it doesn't exist (switching from lite to full mode)
                 if not nameplate.myPlate and ns.CreatePlateFrame then
                     ns:CreatePlateFrame(nameplate, unit)
@@ -1442,7 +1596,7 @@ function ns:UpdateAllPlates()
                         ApplyFPSIncrease(nameplate.myPlate)
                     end
                 end
-                
+
                 if nameplate.myPlate then
                     nameplate.myPlate.unit = unit
                     nameplate.myPlate.cachedGUID = UnitGUID(unit)
@@ -1456,7 +1610,7 @@ function ns:UpdateAllPlates()
                         nameplate.myPlate._initialized = true
                         nameplate.myPlate._lastUnit = unit
                     end
-                    
+
                     -- Refresh TurboDebuff on settings change (applies new size/anchor immediately)
                     if ns.UpdateTurboDebuff then
                         ns:UpdateTurboDebuff(nameplate.myPlate, unit)
@@ -1490,10 +1644,8 @@ EventRegistry:RegisterCallback("NamePlateManager.UnitRemoved", OnNamePlateRemove
 local nameplateEventFallback = CreateFrame("Frame")
 nameplateEventFallback:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 nameplateEventFallback:SetScript("OnEvent", function(_, _, unit)
-    local nameplate = GetNamePlateForUnit(unit)
-    if nameplate then
-        OnNamePlateRemoved(nil, unit, nameplate)
-    end
+    local nameplate = ns.unitToNameplate[unit]
+    OnNamePlateRemoved(nil, unit, nameplate)
 end)
 
 SLASH_TURBOPLATES1 = "/tp"
@@ -1502,7 +1654,7 @@ SlashCmdList["TURBOPLATES"] = function(msg)
     if msg and msg ~= "" then
         local cmd, args = msg:match("^(%S+)%s*(.*)$")
         cmd = cmd and cmd:lower()
-        
+
         if cmd == "stacking" then
             if ns.HandleStackingCommand then
                 ns.HandleStackingCommand(args)
@@ -1510,6 +1662,6 @@ SlashCmdList["TURBOPLATES"] = function(msg)
             return
         end
     end
-    
+
     if ns.ToggleGUI then ns:ToggleGUI() end
 end
