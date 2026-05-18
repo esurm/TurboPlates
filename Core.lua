@@ -67,6 +67,7 @@ local tinsert = tinsert
 local strlower = string.lower
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 local C_NamePlateManager = C_NamePlateManager
+local C_NamePlateManager_GetNamePlateSize = C_NamePlateManager.GetNamePlateSize
 local C_NamePlate = C_NamePlate
 local C_CVar = C_CVar
 local IsInRaid = IsInRaid
@@ -717,6 +718,8 @@ local function SetupLiteContainer(container, nameplate)
     local defaultFont = "Fonts\\FRIZQT__.TTF"
 
     container:EnableMouse(false)
+    local width, height = C_NamePlateManager_GetNamePlateSize()
+    PixelUtil.SetSize(container, width, height, 1, 1)
 
     local txt = container:CreateFontString(nil, "OVERLAY")
     txt:SetFont(defaultFont, 12, "OUTLINE")
@@ -841,7 +844,12 @@ local function OnNamePlateAdded(_, unit, nameplate)
             container = CreateFrame("Frame", nil, nameplate)
             SetupLiteContainer(container, nameplate)
             nameplate.liteContainer = container
+            ApplyFPSIncrease(container)
         end
+        container.unit = unit
+        container.cachedGUID = UnitGUID(unit)
+        container.isPlayer = false
+        container.isFriendly = true
 
         -- References for convenience
         local txt = container.liteNameText
@@ -1351,7 +1359,12 @@ function ns:UpdateAllPlates()
                     container = CreateFrame("Frame", nil, nameplate)
                     SetupLiteContainer(container, nameplate)
                     nameplate.liteContainer = container
+                    ApplyFPSIncrease(container)
                 end
+                container.unit = unit
+                container.cachedGUID = UnitGUID(unit)
+                container.isPlayer = false
+                container.isFriendly = true
 
                 local txt = container.liteNameText
                 local guild = container.liteGuildText

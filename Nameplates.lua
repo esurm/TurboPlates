@@ -624,6 +624,14 @@ end
 -- Called on PLAYER_TARGET_CHANGED and when alpha settings change
 function ns.UpdateNameplateAlphas(reason)
     for nameplate in C_NamePlateManager.EnumerateActiveNamePlates() do
+        if nameplate._isLite and nameplate.liteContainer then
+            local parentAlpha = nameplate:GetAlpha()
+            local alpha = ns.ResolveNameplateAlpha(nameplate.liteContainer, parentAlpha, reason or "refresh", ScheduleNameplateAlphaUpdate)
+            if alpha ~= nameplate.liteContainer:GetAlpha() then
+                nameplate.liteContainer:SetAlpha(alpha)
+            end
+        end
+
         local myPlate = nameplate.myPlate
         if myPlate and not myPlate.isPlayer then
             local parentAlpha = nameplate:GetAlpha()
