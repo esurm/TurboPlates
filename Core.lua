@@ -678,7 +678,8 @@ Core:SetScript("OnEvent", function(self, event, ...)
         end
 
         local version = GetAddOnMetadata(addonName, "Version") or "1.0.0"
-        print(L.BoostedBy:format(version))
+        local boostedBy = L.BoostedBy or "TurboPlates v%s loaded - /tp"
+        print(boostedBy:format(version))
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat ended - finish any deferred DisableBlizzPlate calls
         -- Now safe to call SetAttribute without causing taint

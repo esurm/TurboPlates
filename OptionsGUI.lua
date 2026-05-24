@@ -3181,7 +3181,7 @@ function ns:ToggleGUI()
         {name = L.LevelIndicatorAll, value = "all"},
     }
     CreateDropdown(p3, "levelMode", L.LevelIndicator, levelModeOpts, 20, y - 235)
-    CreateSlider(p3, "nameTextYOffset", L.NameTextYOffset, -10, 10, 260, y - 235, false, nil, "px")
+    CreateSlider(p3, "nameTextYOffset", L.NameTextYOffset, -50, 50, 260, y - 235, false, nil, "px")
 
     -- Threat Text Display dropdown
     local threatTextAnchorOpts = {
