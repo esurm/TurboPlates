@@ -1,4 +1,5 @@
 local addonName, ns = ...
+local L = ns.L
 
 -- TurboPlates Core
 -- Nameplate handling via C_NamePlateManager, EventRegistry, C_NamePlate
@@ -13,9 +14,9 @@ local IncompatibleAddOns = {
 
 -- StaticPopup for addon conflicts
 StaticPopupDialogs["TURBOPLATES_ADDON_CONFLICT"] = {
-    text = "|cff4fa3ffTurboPlates|r has detected an incompatible nameplate addon: |cffff6666%s|r\n\nOnly one nameplate addon can be active at a time.",
-    button1 = "Disable It",
-    button2 = "Disable TurboPlates",
+    text = L.ConflictText,
+    button1 = L.DisableIt,
+    button2 = L.DisableTP,
     OnAccept = function(self, data)
         if data == "Ascension_NamePlates" then
             -- Ascension_NamePlates is controlled by CVar, not addon disable
@@ -48,6 +49,7 @@ local UnitName = UnitName
 local UnitClass = UnitClass
 local UnitIsPlayer = UnitIsPlayer
 local UnitIsFriend = UnitIsFriend
+local UnitIsUnit = UnitIsUnit
 local UnitIsPet = UnitIsPet
 local UnitPlayerControlled = UnitPlayerControlled
 local UnitCreatureType = UnitCreatureType
@@ -676,7 +678,7 @@ Core:SetScript("OnEvent", function(self, event, ...)
         end
 
         local version = GetAddOnMetadata(addonName, "Version") or "1.0.0"
-        print("Boosted by |cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r v" .. version .. " - /tp for config")
+        print(L.BoostedBy:format(version))
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat ended - finish any deferred DisableBlizzPlate calls
         -- Now safe to call SetAttribute without causing taint
@@ -722,13 +724,47 @@ local function SetupLiteContainer(container, nameplate)
     PixelUtil.SetSize(container, width, height, 1, 1)
 
     local txt = container:CreateFontString(nil, "OVERLAY")
-    txt:SetFont(defaultFont, 12, "OUTLINE")
+    ns:SetFontSafe(txt, defaultFont, 12, "OUTLINE")
     txt:SetPoint("CENTER", container, "CENTER", 0, 0)
     txt:SetJustifyV("MIDDLE")
     container.liteNameText = txt
 
+    local cloudTexture = "Interface\\AddOns\\TurboPlates\\Textures\\Circle_AlphaGradient_Out.tga"
+    local nameHighlight = { textures = {} }
+    local function CreateHighlightLobe(alpha)
+        local tex = container:CreateTexture(nil, "BACKGROUND", nil, -8)
+        tex:SetTexture(cloudTexture)
+        tex:SetBlendMode("ADD")
+        tex:SetVertexColor(1, 1, 1, alpha)
+        tex:Hide()
+        nameHighlight.textures[#nameHighlight.textures + 1] = tex
+        return tex
+    end
+    nameHighlight.center = CreateHighlightLobe(0.32)
+    nameHighlight.left = CreateHighlightLobe(0.22)
+    nameHighlight.right = CreateHighlightLobe(0.22)
+    nameHighlight.top = CreateHighlightLobe(0.16)
+    container.liteNameHighlight = nameHighlight
+
+    local highlightDriver = CreateFrame("Frame", nil, container)
+    highlightDriver.container = container
+    highlightDriver.highlight = nameHighlight
+    highlightDriver:EnableMouse(false)
+    highlightDriver:Hide()
+    highlightDriver:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        local throttle = 0.1 * (ns.c_throttleMultiplier or 1)
+        if self.elapsed <= throttle then return end
+        self.elapsed = 0
+
+        if not (self.unit and UnitExists("mouseover") and UnitIsUnit("mouseover", self.unit)) then
+            ns.HideLiteNameHighlight(self.container)
+        end
+    end)
+    container.liteNameHighlightDriver = highlightDriver
+
     local guild = container:CreateFontString(nil, "OVERLAY")
-    guild:SetFont(defaultFont, 10, "OUTLINE")
+    ns:SetFontSafe(guild, defaultFont, 10, "OUTLINE")
     guild:SetPoint("TOP", txt, "BOTTOM", 0, -1)
     guild:SetTextColor(0.8, 0.8, 0.8)
     guild:Hide()
@@ -741,7 +777,7 @@ local function SetupLiteContainer(container, nameplate)
 
     -- Level text for lite plates (anchored right of name)
     local levelText = container:CreateFontString(nil, "OVERLAY")
-    levelText:SetFont(defaultFont, 12, "OUTLINE")
+    ns:SetFontSafe(levelText, defaultFont, 12, "OUTLINE")
     levelText:SetPoint("LEFT", txt, "RIGHT", PixelUtil.GetNearestPixelSize(2, 1), 0)
     levelText:SetJustifyH("LEFT")
     levelText:SetJustifyV("MIDDLE")
@@ -768,7 +804,7 @@ local function SetupLiteContainer(container, nameplate)
     -- Lite health text - scales with friendlyFontSize
     local liteHPText = liteHP:CreateFontString(nil, "OVERLAY")
     local fontSize = math.max(7, math.floor(friendlySize * 0.75))
-    liteHPText:SetFont(ns.c_font or defaultFont, fontSize, "OUTLINE")
+    ns:SetFontSafe(liteHPText, ns.c_font or defaultFont, fontSize, "OUTLINE")
     liteHPText:SetPoint("CENTER", liteHP, "CENTER", 0, 0)
     liteHPText:SetTextColor(1, 1, 1)
     container.liteHealthText = liteHPText
@@ -776,6 +812,74 @@ local function SetupLiteContainer(container, nameplate)
     container:SetParent(nameplate)
     container:SetAllPoints()
     container:SetFrameLevel(nameplate:GetFrameLevel() + 1)
+end
+
+function ns.ShowLiteNameHighlight(nameplate, unit)
+    local container = nameplate and nameplate.liteContainer
+    local txt = container and container.liteNameText
+    local highlight = container and container.liteNameHighlight
+    local driver = container and container.liteNameHighlightDriver
+    if not (unit and container and txt and highlight and driver) then return end
+
+    local width = txt:GetStringWidth() or 0
+    if width <= 0 then
+        width = txt:GetWidth() or 0
+    end
+    if width <= 0 then return end
+
+    local height = txt:GetStringHeight() or ns.c_friendlyFontSize or 12
+    if height <= 0 then
+        height = ns.c_friendlyFontSize or 12
+    end
+
+    local cloudHeight = math.max(height + 8, (ns.c_friendlyFontSize or 12) * 1.7, 18)
+    local cloudWidth = width + cloudHeight
+    local r = ns.c_mouseoverGlowColor_r or 1
+    local g = ns.c_mouseoverGlowColor_g or 1
+    local b = ns.c_mouseoverGlowColor_b or 1
+    highlight.center:SetVertexColor(r, g, b, 0.32)
+    highlight.center:ClearAllPoints()
+    PixelUtil.SetSize(highlight.center, cloudWidth, cloudHeight, 1, 1)
+    PixelUtil.SetPoint(highlight.center, "CENTER", txt, "CENTER", 0, 0, 1, 1)
+
+    highlight.left:SetVertexColor(r, g, b, 0.22)
+    highlight.left:ClearAllPoints()
+    PixelUtil.SetSize(highlight.left, cloudHeight, cloudHeight, 1, 1)
+    PixelUtil.SetPoint(highlight.left, "CENTER", txt, "LEFT", cloudHeight * 0.45, 0, 1, 1)
+
+    highlight.right:SetVertexColor(r, g, b, 0.22)
+    highlight.right:ClearAllPoints()
+    PixelUtil.SetSize(highlight.right, cloudHeight, cloudHeight, 1, 1)
+    PixelUtil.SetPoint(highlight.right, "CENTER", txt, "RIGHT", -cloudHeight * 0.45, 0, 1, 1)
+
+    highlight.top:SetVertexColor(r, g, b, 0.16)
+    highlight.top:ClearAllPoints()
+    PixelUtil.SetSize(highlight.top, cloudWidth * 0.65, cloudHeight * 0.75, 1, 1)
+    PixelUtil.SetPoint(highlight.top, "CENTER", txt, "CENTER", 0, cloudHeight * 0.08, 1, 1)
+
+    driver.unit = unit
+    driver.elapsed = 0
+    local textures = highlight.textures
+    for i = 1, #textures do
+        textures[i]:Show()
+    end
+    driver:Show()
+end
+
+function ns.HideLiteNameHighlight(container)
+    if not container then return end
+    if container.liteNameHighlight then
+        local textures = container.liteNameHighlight.textures
+        if textures then
+            for i = 1, #textures do
+                textures[i]:Hide()
+            end
+        end
+    end
+    if container.liteNameHighlightDriver then
+        container.liteNameHighlightDriver.unit = nil
+        container.liteNameHighlightDriver:Hide()
+    end
 end
 
 -- Event-driven nameplate handling via EventRegistry
@@ -818,7 +922,10 @@ local function OnNamePlateAdded(_, unit, nameplate)
     if isTotem and nameplate.gladdyTotemFrame and nameplate.gladdyTotemFrame.active then
         -- Gladdy is handling this totem - hide our elements and return
         if nameplate.myPlate then nameplate.myPlate:Hide() end
-        if nameplate.liteContainer then nameplate.liteContainer:Hide() end
+        if nameplate.liteContainer then
+            ns.HideLiteNameHighlight(nameplate.liteContainer)
+            nameplate.liteContainer:Hide()
+        end
         return
     end
 
@@ -862,14 +969,14 @@ local function OnNamePlateAdded(_, unit, nameplate)
 
         -- Font caching - only call SetFont if settings changed
         if txt._lastFont ~= ns.c_font or txt._lastSize ~= ns.c_friendlyFontSize or txt._lastOutline ~= ns.c_fontOutline then
-            txt:SetFont(ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
+            ns:SetFontSafe(txt, ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
             txt._lastFont = ns.c_font
             txt._lastSize = ns.c_friendlyFontSize
             txt._lastOutline = ns.c_fontOutline
         end
 
         if guild._lastFont ~= ns.c_font or guild._lastSize ~= ns.c_guildFontSize or guild._lastOutline ~= ns.c_fontOutline then
-            guild:SetFont(ns.c_font, ns.c_guildFontSize, ns.c_fontOutline)
+            ns:SetFontSafe(guild, ns.c_font, ns.c_guildFontSize, ns.c_fontOutline)
             guild._lastFont = ns.c_font
             guild._lastSize = ns.c_guildFontSize
             guild._lastOutline = ns.c_fontOutline
@@ -999,7 +1106,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
                 else
                     -- Font caching for level text
                     if levelText._lastFont ~= ns.c_font or levelText._lastSize ~= ns.c_friendlyFontSize or levelText._lastOutline ~= ns.c_fontOutline then
-                        levelText:SetFont(ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
+                        ns:SetFontSafe(levelText, ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
                         levelText._lastFont = ns.c_font
                         levelText._lastSize = ns.c_friendlyFontSize
                         levelText._lastOutline = ns.c_fontOutline
@@ -1055,6 +1162,7 @@ local function OnNamePlateAdded(_, unit, nameplate)
 
     -- Non-lite path: hide lite container if exists, including lite quest icon
     if nameplate.liteContainer then
+        ns.HideLiteNameHighlight(nameplate.liteContainer)
         nameplate.liteContainer:Hide()
         -- Hide lite healer icon
         if nameplate.liteContainer.liteHealerIcon then
@@ -1166,6 +1274,7 @@ OnNamePlateRemoved = function(_, unit, nameplate)
         nameplate._cachedNPCID = nil
 
         if nameplate.liteContainer then
+            ns.HideLiteNameHighlight(nameplate.liteContainer)
             nameplate.liteContainer:Hide()
             -- Hide lite healer icon
             if nameplate.liteContainer.liteHealerIcon then
@@ -1376,14 +1485,14 @@ function ns:UpdateAllPlates()
 
                 -- Lite name font caching
                 if txt._lastFont ~= ns.c_font or txt._lastSize ~= ns.c_friendlyFontSize or txt._lastOutline ~= ns.c_fontOutline then
-                    txt:SetFont(ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
+                    ns:SetFontSafe(txt, ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
                     txt._lastFont = ns.c_font
                     txt._lastSize = ns.c_friendlyFontSize
                     txt._lastOutline = ns.c_fontOutline
                 end
                 -- Lite guild font caching
                 if guild._lastFont ~= ns.c_font or guild._lastSize ~= ns.c_guildFontSize or guild._lastOutline ~= ns.c_fontOutline then
-                    guild:SetFont(ns.c_font, ns.c_guildFontSize, ns.c_fontOutline)
+                    ns:SetFontSafe(guild, ns.c_font, ns.c_guildFontSize, ns.c_fontOutline)
                     guild._lastFont = ns.c_font
                     guild._lastSize = ns.c_guildFontSize
                     guild._lastOutline = ns.c_fontOutline
@@ -1412,7 +1521,7 @@ function ns:UpdateAllPlates()
                     local fontSize = math.max(7, math.floor((ns.c_friendlyFontSize or 12) * 0.75))
                     local outline = ns.c_fontOutline or "OUTLINE"
                     if container.liteHealthText._lastFont ~= font or container.liteHealthText._lastSize ~= fontSize or container.liteHealthText._lastOutline ~= outline then
-                        container.liteHealthText:SetFont(font, fontSize, outline)
+                        ns:SetFontSafe(container.liteHealthText, font, fontSize, outline)
                         container.liteHealthText._lastFont = font
                         container.liteHealthText._lastSize = fontSize
                         container.liteHealthText._lastOutline = outline
@@ -1525,7 +1634,7 @@ function ns:UpdateAllPlates()
                         else
                             -- Font caching
                             if levelText._lastFont ~= ns.c_font or levelText._lastSize ~= ns.c_friendlyFontSize or levelText._lastOutline ~= ns.c_fontOutline then
-                                levelText:SetFont(ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
+                                ns:SetFontSafe(levelText, ns.c_font, ns.c_friendlyFontSize, ns.c_fontOutline)
                                 levelText._lastFont = ns.c_font
                                 levelText._lastSize = ns.c_friendlyFontSize
                                 levelText._lastOutline = ns.c_fontOutline
@@ -1591,6 +1700,7 @@ function ns:UpdateAllPlates()
                 container:Show()
             else
                 if nameplate.liteContainer then
+                    ns.HideLiteNameHighlight(nameplate.liteContainer)
                     nameplate.liteContainer:Hide()
                 end
                 if nameplate.liteQuestIcon then

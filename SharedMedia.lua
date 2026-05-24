@@ -34,6 +34,10 @@ end
 
 -- Fetch font path by LSM name
 function ns.GetFont(name)
+    if ns.GetActiveLanguage and ns:GetActiveLanguage() == "zhCN" then
+        local cjkFont = LSM:Fetch("font", ns.CJK_FONT_NAME or "Noto Sans CJK SC")
+        if cjkFont then return cjkFont end
+    end
     return LSM:Fetch("font", name) or LSM:Fetch("font", "Friz Quadrata TT")
 end
 

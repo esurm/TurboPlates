@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 
 local EXPORT_PREFIX = "!TP1!"
 local LibDeflate = LibStub("LibDeflate")
@@ -76,7 +77,7 @@ local function ValidateSettings(settings)
         "targetGlowColor", "tappedColor", "hostileNameColor",
         "secureColor", "transColor", "insecureColor", "offTankColor",
         "dpsSecureColor", "dpsTransColor", "dpsAggroColor",
-        "highlightGlowColor", "targetingMeColor"
+        "highlightGlowColor", "targetingMeColor", "mouseoverGlowColor"
     }
 
     for _, key in ipairs(colorKeys) do
@@ -133,7 +134,7 @@ end
 -- options: { settings = bool, highlights = bool, whitelist = bool, blacklist = bool }
 function ns:ExportSettings(options)
     if not TurboPlatesDB then
-        return nil, "No settings to export"
+        return nil, L.ExportNoSettings
     end
 
     -- Default: export everything
@@ -141,7 +142,7 @@ function ns:ExportSettings(options)
 
     -- Check if anything is selected
     if not options.settings and not options.highlights and not options.whitelist and not options.blacklist then
-        return nil, "No categories selected"
+        return nil, L.ExportNoCategory
     end
 
     local exportData = {}
@@ -184,22 +185,22 @@ function ns:ExportSettings(options)
 
     -- Check if we have anything to export
     if not next(exportData) then
-        return nil, "No data to export"
+        return nil, L.ExportNoData
     end
 
     local serialized = AceSerializer:Serialize(exportData)
     if not serialized then
-        return nil, "Serialization failed"
+        return nil, L.ExportSerialFailed
     end
 
     local compressed = LibDeflate:CompressDeflate(serialized, {level = 9})
     if not compressed then
-        return nil, "Compression failed"
+        return nil, L.ExportCompressFailed
     end
 
     local encoded = LibDeflate:EncodeForPrint(compressed)
     if not encoded then
-        return nil, "Encoding failed"
+        return nil, L.ExportEncodeFailed
     end
 
     return EXPORT_PREFIX .. encoded
@@ -209,7 +210,7 @@ end
 -- options: { settings = bool, highlights = bool, whitelist = bool, blacklist = bool }
 function ns:ImportSettings(importString, options)
     if not importString or importString == "" then
-        return false, "Empty import string"
+        return false, L.ImportEmptyStr
     end
 
     -- Default: import everything
@@ -217,7 +218,7 @@ function ns:ImportSettings(importString, options)
 
     -- Check if anything is selected
     if not options.settings and not options.highlights and not options.whitelist and not options.blacklist then
-        return false, "No categories selected"
+        return false, L.ExportNoCategory
     end
 
     -- Trim whitespace
@@ -225,7 +226,7 @@ function ns:ImportSettings(importString, options)
 
     -- Validate prefix
     if not importString:find("^" .. EXPORT_PREFIX:gsub("!", "%%!")) then
-        return false, "Invalid format (missing TurboPlates prefix)"
+        return false, L.ImportInvalidPrefix
     end
 
     -- Strip prefix
@@ -233,23 +234,23 @@ function ns:ImportSettings(importString, options)
 
     local decoded = LibDeflate:DecodeForPrint(data)
     if not decoded then
-        return false, "Decode failed - invalid string"
+        return false, L.ImportDecodeFailed
     end
 
     local decompressed = LibDeflate:DecompressDeflate(decoded)
     if not decompressed then
-        return false, "Decompression failed - corrupted data"
+        return false, L.ImportDecompressFailed
     end
 
     local success, settings = AceSerializer:Deserialize(decompressed)
     if not success or type(settings) ~= "table" then
-        return false, "Deserialize failed - invalid data"
+        return false, L.ImportDeserializeFailed
     end
 
     -- Validate and repair settings structure (only if importing settings)
     if options.settings then
         if not ValidateSettings(settings) then
-            return false, "Validation failed - malformed settings"
+            return false, L.ImportValidationFailed
         end
     end
 
@@ -273,32 +274,32 @@ function ns:ImportSettings(importString, options)
                 end
             end
         end
-        table.insert(imported, "Settings")
+        table.insert(imported, L.LabelSettings)
     end
 
     -- Spell Highlights
     if options.highlights and settings.highlightSpells then
         TurboPlatesDB.highlightSpells = settings.highlightSpells
-        table.insert(imported, "Spell Highlights")
+        table.insert(imported, L.LabelHighlights)
     end
 
     -- Aura Whitelist
     if options.whitelist and settings.auras and settings.auras.whitelist then
         if not TurboPlatesDB.auras then TurboPlatesDB.auras = {} end
         TurboPlatesDB.auras.whitelist = settings.auras.whitelist
-        table.insert(imported, "Whitelist")
+        table.insert(imported, L.LabelWhitelist2)
     end
 
     -- Aura Blacklist
     if options.blacklist and settings.auras and settings.auras.blacklist then
         if not TurboPlatesDB.auras then TurboPlatesDB.auras = {} end
         TurboPlatesDB.auras.blacklist = settings.auras.blacklist
-        table.insert(imported, "Blacklist")
+        table.insert(imported, L.LabelBlacklist2)
     end
 
     if #imported == 0 then
-        return false, "No matching data found in string"
+        return false, L.ImportNoMatch
     end
 
-    return true, "Imported: " .. table.concat(imported, ", ")
+    return true, L.ImportSuccessStr:format(table.concat(imported, ", "))
 end

@@ -20,8 +20,18 @@ local bdTex = "Interface\\Buttons\\WHITE8X8"
 local glowTex = mediaPath.."glowTex.blp"
 local bgTex = mediaPath.."bgTex.blp"
 
--- GUI font (immune to system font overrides from other addons)
-local GUI_FONT = "Interface\\AddOns\\TurboPlates\\Fonts\\FRIZQT__.ttf"
+-- Use ns.GUI_FONT override (set by locale files for CJK-capable clients)
+local FALLBACK_GUI_FONT = "Interface\\AddOns\\TurboPlates\\Fonts\\FRIZQT__.ttf"
+local function GetGUIFont()
+    return ns.GUI_FONT or FALLBACK_GUI_FONT
+end
+local function SetGUIFont(fontString, size, outline)
+    if not fontString then return end
+    fontString:SetFont(GetGUIFont(), size, outline or "")
+    if not fontString:GetFont() then
+        fontString:SetFont(FALLBACK_GUI_FONT, size, outline or "")
+    end
+end
 
 -- Alpha bias to prevent 1px border dropout in 3.3.5 client
 local BORDER_ALPHA = 0.9
@@ -101,6 +111,10 @@ local cr, cg, cb = classColor.r, classColor.g, classColor.b
 -- GUI state
 local guiFrame, guiTab, guiPage = nil, {}, {}
 local reopenAfterCombat = false
+local TP_PREFIX = "|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: "
+local function TPPrint(message)
+    if message then print(TP_PREFIX .. message) end
+end
 
 -- Forward declare ShowGUI for combat handler
 local ShowGUI
@@ -115,7 +129,7 @@ combatFrame:SetScript("OnEvent", function(self, event)
         if guiFrame and guiFrame:IsVisible() then
             reopenAfterCombat = true
             guiFrame:Hide()
-            print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Options closed due to combat.")
+            print(L.OptionsClosedCombat)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Leaving combat: reopen if it was open before or user tried to open during combat
@@ -132,9 +146,9 @@ combatFrame:SetScript("OnEvent", function(self, event)
 end)
 
 StaticPopupDialogs["TURBOPLATES_RESET"] = {
-    text = "Reset all TurboPlates settings to defaults?\n\nThis will reload your UI.\n(Spell lists will be preserved)",
-    button1 = "Yes",
-    button2 = "No",
+    text = L.ResetText,
+    button1 = L.ResetYes,
+    button2 = L.ResetNo,
     OnAccept = function()
         -- Preserve spell lists before reset
         local savedBlacklist = TurboPlatesDB and TurboPlatesDB.auras and TurboPlatesDB.auras.blacklist
@@ -237,7 +251,7 @@ end
 
 local function CreateFS(parent, size, text, color, anchor, x, y)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(GUI_FONT, size, "OUTLINE")
+    SetGUIFont(fs, size, "OUTLINE")
     fs:SetText(text or "")
     if color == "class" then
         fs:SetTextColor(cr, cg, cb)
@@ -382,7 +396,7 @@ local function CreateSpellListPanel(parentFrame, listType)
     local inputBox = CreateFrame("EditBox", nil, panel, "BackdropTemplate")
     inputBox:SetSize(150, 24)
     inputBox:SetPoint("TOPLEFT", 15, -60)
-    inputBox:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(inputBox, 12, "")
     inputBox:SetAutoFocus(false)
     inputBox:SetNumeric(true)
     inputBox:SetMaxLetters(10)
@@ -393,7 +407,7 @@ local function CreateSpellListPanel(parentFrame, listType)
     -- Placeholder text
     local placeholder = inputBox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     placeholder:SetPoint("LEFT", 8, 0)
-    placeholder:SetText("Spell ID")
+    placeholder:SetText(L.SpellIDInput)
     placeholder:SetTextColor(0.5, 0.5, 0.5)
     inputBox:SetScript("OnEditFocusGained", function() placeholder:Hide() end)
     inputBox:SetScript("OnEditFocusLost", function(self)
@@ -628,9 +642,9 @@ local function CreateSpellListPanel(parentFrame, listType)
                 -- Refresh cached settings
                 if ns.CacheAuraSettings then ns:CacheAuraSettings() end
                 RefreshSpellList()
-                local listDisplayName = listType == "whitelist" and "Whitelist" or "Blacklist"
+                local listDisplayName = listType == "whitelist" and L.WhitelistName or L.BlacklistName
                 if removedName then
-                    print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Removed from " .. listDisplayName .. " - " .. removedName)
+                    TPPrint(L.RemovedFrom:format(listDisplayName, removedName))
                 end
             end)
         end
@@ -673,8 +687,8 @@ local function CreateSpellListPanel(parentFrame, listType)
 
         -- Check if already exists
         if TurboPlatesDB.auras[listType][spellID] then
-            local listDisplayName = listType == "whitelist" and "Whitelist" or "Blacklist"
-            print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Spell already in " .. listDisplayName)
+            local listDisplayName = listType == "whitelist" and L.WhitelistName or L.BlacklistName
+            TPPrint(L.SpellAlreadyIn:format(listDisplayName))
             return
         end
 
@@ -688,8 +702,8 @@ local function CreateSpellListPanel(parentFrame, listType)
         inputBox:SetText("")
         previewFrame:Hide()
         RefreshSpellList()
-        local listDisplayName = listType == "whitelist" and "Whitelist" or "Blacklist"
-        print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Added to " .. listDisplayName .. " - " .. name)
+        local listDisplayName = listType == "whitelist" and L.WhitelistName or L.BlacklistName
+        TPPrint(L.AddedTo:format(listDisplayName, name))
     end)
 
     -- Also trigger add on Enter key
@@ -704,9 +718,9 @@ local function CreateSpellListPanel(parentFrame, listType)
     clearBtn:SetScript("OnClick", function()
         PlaySound(856)
         StaticPopupDialogs["TURBOPLATES_CLEAR_SPELLLIST"] = {
-            text = "Clear all spells from " .. (listType == "blacklist" and "Blacklist" or "Whitelist") .. "?",
-            button1 = "Yes",
-            button2 = "No",
+            text = L.ClearSpellList:format(listType == "blacklist" and L.BlacklistName or L.WhitelistName),
+            button1 = L.Yes,
+            button2 = L.No,
             OnAccept = function()
                 if TurboPlatesDB.auras then
                     TurboPlatesDB.auras[listType] = {}
@@ -802,6 +816,7 @@ local function CreateCVarCheckBox(parent, cvar, label, x, y, callback)
     bg:SetAllPoints()
     bg:SetFrameLevel(chk:GetFrameLevel() - 1)
     CreateBD(bg, 0.3)
+    if bg.__border then bg.__border:SetColor(0.35, 0.35, 0.35, 0.85) end
     CreateGradient(bg)
     chk.bg = bg
 
@@ -886,7 +901,7 @@ local function CreateCVarSlider(parent, cvar, label, minVal, maxVal, x, y, callb
     frame:SetPoint("TOPLEFT", x, y)
 
     local title = frame:CreateFontString(nil, "OVERLAY")
-    title:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(title, 12, "")
     title:SetPoint("TOPLEFT", 0, 0)
     title:SetText(label)
     title:SetTextColor(1, 0.8, 0)
@@ -918,19 +933,19 @@ local function CreateCVarSlider(parent, cvar, label, minVal, maxVal, x, y, callb
     slider:EnableMouseWheel(true)
 
     local low = frame:CreateFontString(nil, "OVERLAY")
-    low:SetFont(GUI_FONT, 10, "")
+    SetGUIFont(low, 10, "")
     low:SetPoint("TOPLEFT", sliderBg, "BOTTOMLEFT", 0, -2)
     low:SetText(minVal .. suffix)
     low:SetTextColor(0.6, 0.6, 0.6)
 
     local high = frame:CreateFontString(nil, "OVERLAY")
-    high:SetFont(GUI_FONT, 10, "")
+    SetGUIFont(high, 10, "")
     high:SetPoint("TOPRIGHT", sliderBg, "BOTTOMRIGHT", 0, -2)
     high:SetText(maxVal .. suffix)
     high:SetTextColor(0.6, 0.6, 0.6)
 
     local valueText = frame:CreateFontString(nil, "OVERLAY")
-    valueText:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(valueText, 12, "")
     valueText:SetPoint("TOP", sliderBg, "BOTTOM", 0, -2)
 
     -- Use namespace cache (initialized at PLAYER_LOGIN in Core.lua)
@@ -982,7 +997,7 @@ local function CreateAlphaCVarSlider(parent, dbVar, cvar, label, x, y, tooltipTe
     frame:SetPoint("TOPLEFT", x, y)
 
     local title = frame:CreateFontString(nil, "OVERLAY")
-    title:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(title, 12, "")
     title:SetPoint("TOPLEFT", 0, 0)
     title:SetText(label)
     title:SetTextColor(1, 0.8, 0)
@@ -1012,19 +1027,19 @@ local function CreateAlphaCVarSlider(parent, dbVar, cvar, label, x, y, tooltipTe
     slider:EnableMouseWheel(true)
 
     local low = frame:CreateFontString(nil, "OVERLAY")
-    low:SetFont(GUI_FONT, 10, "")
+    SetGUIFont(low, 10, "")
     low:SetPoint("TOPLEFT", sliderBg, "BOTTOMLEFT", 0, -2)
     low:SetText("0%")
     low:SetTextColor(0.6, 0.6, 0.6)
 
     local high = frame:CreateFontString(nil, "OVERLAY")
-    high:SetFont(GUI_FONT, 10, "")
+    SetGUIFont(high, 10, "")
     high:SetPoint("TOPRIGHT", sliderBg, "BOTTOMRIGHT", 0, -2)
     high:SetText("100%")
     high:SetTextColor(0.6, 0.6, 0.6)
 
     local valueText = frame:CreateFontString(nil, "OVERLAY")
-    valueText:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(valueText, 12, "")
     valueText:SetPoint("TOP", sliderBg, "BOTTOM", 0, -2)
 
     local function FormatValue(v)
@@ -1086,7 +1101,7 @@ local function CreateSlider(parent, var, label, minVal, maxVal, x, y, isFloat, c
 
     -- Label above
     local title = frame:CreateFontString(nil, "OVERLAY")
-    title:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(title, 12, "")
     title:SetPoint("TOPLEFT", 0, 0)
     title:SetText(label)
     title:SetTextColor(1, 0.8, 0)
@@ -1122,20 +1137,20 @@ local function CreateSlider(parent, var, label, minVal, maxVal, x, y, isFloat, c
 
     -- Low/High labels (with display multiplier)
     local low = frame:CreateFontString(nil, "OVERLAY")
-    low:SetFont(GUI_FONT, 10, "")
+    SetGUIFont(low, 10, "")
     low:SetPoint("TOPLEFT", sliderBg, "BOTTOMLEFT", 0, -2)
     low:SetText(tostring(math.floor(minVal * displayMultiplier + 0.5)) .. suffix)
     low:SetTextColor(0.6, 0.6, 0.6)
 
     local high = frame:CreateFontString(nil, "OVERLAY")
-    high:SetFont(GUI_FONT, 10, "")
+    SetGUIFont(high, 10, "")
     high:SetPoint("TOPRIGHT", sliderBg, "BOTTOMRIGHT", 0, -2)
     high:SetText(tostring(math.floor(maxVal * displayMultiplier + 0.5)) .. suffix)
     high:SetTextColor(0.6, 0.6, 0.6)
 
     -- Value in center
     local valueText = frame:CreateFontString(nil, "OVERLAY")
-    valueText:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(valueText, 12, "")
     valueText:SetPoint("TOP", sliderBg, "BOTTOM", 0, -2)
 
     -- Helper to format value with suffix and display multiplier
@@ -1249,7 +1264,7 @@ local function CreateScrollableDropdown(parent, var, label, options, x, y, callb
 
     -- Label above
     local title = frame:CreateFontString(nil, "OVERLAY")
-    title:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(title, 12, "")
     title:SetPoint("TOPLEFT", 0, 0)
     title:SetText(label)
     title:SetTextColor(1, 0.8, 0)
@@ -1263,7 +1278,7 @@ local function CreateScrollableDropdown(parent, var, label, options, x, y, callb
 
     -- Selected text
     local text = btn:CreateFontString(nil, "OVERLAY")
-    text:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(text, 12, "")
     text:SetPoint("LEFT", 8, 0)
     text:SetPoint("RIGHT", -22, 0)
     text:SetJustifyH("LEFT")
@@ -1381,7 +1396,7 @@ local function CreateScrollableDropdown(parent, var, label, options, x, y, callb
         optBtn:SetPoint("TOPLEFT", 1, -(i - 1) * itemHeight)
 
         local optText = optBtn:CreateFontString(nil, "OVERLAY")
-        optText:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(optText, 12, "")
         optText:SetPoint("LEFT", 6, 0)
         optText:SetPoint("RIGHT", -4, 0)
         optText:SetJustifyH("LEFT")
@@ -1449,6 +1464,23 @@ end
 
 -- Dark themed dropdown
 local dropdownCount = 0
+local function ApplyDropdownPreviewIcon(icon, preview)
+    if not (icon and preview) then return end
+    icon:SetVertexColor(1, 1, 1, 1)
+    icon:SetTexCoord(0, 1, 0, 1)
+    if preview.atlas then
+        icon:SetAtlas(preview.atlas)
+    elseif preview.texture then
+        icon:SetTexture(preview.texture)
+    end
+    if preview.coords then
+        icon:SetTexCoord(preview.coords[1], preview.coords[2], preview.coords[3], preview.coords[4])
+    end
+    if preview.color then
+        icon:SetVertexColor(preview.color[1], preview.color[2], preview.color[3], preview.color[4] or 1)
+    end
+end
+
 local function CreateDropdown(parent, var, label, options, x, y, callback)
     dropdownCount = dropdownCount + 1
 
@@ -1459,7 +1491,7 @@ local function CreateDropdown(parent, var, label, options, x, y, callback)
 
     -- Label above
     local title = frame:CreateFontString(nil, "OVERLAY")
-    title:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(title, 12, "")
     title:SetPoint("TOPLEFT", 0, 0)
     title:SetText(label)
     title:SetTextColor(1, 0.8, 0)
@@ -1473,7 +1505,7 @@ local function CreateDropdown(parent, var, label, options, x, y, callback)
 
     -- Selected text
     local text = btn:CreateFontString(nil, "OVERLAY")
-    text:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(text, 12, "")
     text:SetPoint("LEFT", 8, 0)
     text:SetPoint("RIGHT", -22, 0)
     text:SetJustifyH("LEFT")
@@ -1508,20 +1540,42 @@ local function CreateDropdown(parent, var, label, options, x, y, callback)
 
     -- Create option buttons
     local numOpts = #options
-    list:SetSize(220, numOpts * 20 + 6)
+    local hasPreview = false
+    for _, opt in ipairs(options) do
+        if opt.preview then
+            hasPreview = true
+            break
+        end
+    end
+    local itemHeight = hasPreview and 28 or 20
+    local optionHeight = itemHeight - 2
+    list:SetSize(220, numOpts * itemHeight + 6)
 
     for i, opt in ipairs(options) do
         local optBtn = CreateFrame("Button", nil, list)
-        optBtn:SetSize(214, 18)
-        optBtn:SetPoint("TOPLEFT", 3, -3 - (i - 1) * 20)
+        optBtn:SetSize(214, optionHeight)
+        optBtn:SetPoint("TOPLEFT", 3, -3 - (i - 1) * itemHeight)
 
         local optText = optBtn:CreateFontString(nil, "OVERLAY")
-        optText:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(optText, 12, "")
         optText:SetPoint("LEFT", 6, 0)
+        optText:SetPoint("RIGHT", -6, 0)
+        optText:SetJustifyH("LEFT")
         optText:SetText(opt.name)
         optBtn.text = optText
         optBtn.value = opt.path or opt.value
         optBtn.name = opt.name
+
+        if opt.preview then
+            local previewIcon = optBtn:CreateTexture(nil, "ARTWORK")
+            previewIcon:SetSize(opt.preview.w or 18, opt.preview.h or 18)
+            previewIcon:SetPoint("RIGHT", -8, 0)
+            ApplyDropdownPreviewIcon(previewIcon, opt.preview)
+            previewIcon:SetSize(opt.preview.w or 18, opt.preview.h or 18)
+            optText:ClearAllPoints()
+            optText:SetPoint("LEFT", 6, 0)
+            optText:SetPoint("RIGHT", previewIcon, "LEFT", -6, 0)
+        end
 
         local optBg = optBtn:CreateTexture(nil, "BACKGROUND")
         optBg:SetAllPoints()
@@ -1589,8 +1643,128 @@ local function CreateDropdown(parent, var, label, options, x, y, callback)
     return frame
 end
 
+local function CreateLanguageDropdown(parent, x, y)
+    dropdownCount = dropdownCount + 1
+
+    local options = {
+        { name = "CN", value = "zhCN" },
+        { name = "EN", value = "enUS" },
+        { name = "DE", value = "deDE" },
+        { name = "FR", value = "frFR" },
+        { name = "ES", value = "esES" },
+    }
+    local width = 80
+
+    local btn = CreateFrame("Button", "TurboPlatesLanguageDD"..dropdownCount, parent, "BackdropTemplate")
+    btn:SetSize(width, 22)
+    btn:SetPoint("TOPLEFT", x, y)
+    btn:SetFrameLevel(parent:GetFrameLevel() + 50)
+    CreateBD(btn, 0.6)
+    btn.__border:SetColor(1, 1, 1, 0.2)
+
+    local text = btn:CreateFontString(nil, "OVERLAY")
+    SetGUIFont(text, 12, "")
+    text:SetPoint("LEFT", 8, 0)
+    text:SetPoint("RIGHT", -22, 0)
+    text:SetJustifyH("CENTER")
+    btn.text = text
+
+    local arrow = btn:CreateTexture(nil, "OVERLAY")
+    arrow:SetSize(14, 14)
+    arrow:SetPoint("RIGHT", -5, 0)
+    arrow:SetTexture(mediaPath.."arrow.tga")
+    arrow:SetRotation(math.rad(180))
+    btn.arrow = arrow
+
+    local list = CreateFrame("Frame", "TurboPlatesLanguageDDList"..dropdownCount, UIParent)
+    list:SetFrameStrata("TOOLTIP")
+    list:SetFrameLevel(200)
+    list:SetClampedToScreen(true)
+    list:SetSize(width, #options * 20 + 6)
+
+    local listBgTex = list:CreateTexture(nil, "BACKGROUND")
+    listBgTex:SetAllPoints()
+    listBgTex:SetTexture(bdTex)
+    listBgTex:SetVertexColor(0.1, 0.1, 0.1, 1)
+
+    list.__border = CreateTextureBorder(list, 1)
+    list.__border:SetColor(0.3, 0.3, 0.3, 1)
+    list:Hide()
+    btn.list = list
+
+    local function Refresh()
+        local current = ns.GetActiveLanguage and ns:GetActiveLanguage() or "enUS"
+        for _, opt in ipairs(options) do
+            if opt.value == current then
+                text:SetText(opt.name)
+                return
+            end
+        end
+        text:SetText(options[1].name)
+    end
+
+    for i, opt in ipairs(options) do
+        local optBtn = CreateFrame("Button", nil, list)
+        optBtn:SetSize(width - 6, 18)
+        optBtn:SetPoint("TOPLEFT", 3, -3 - (i - 1) * 20)
+        optBtn.value = opt.value
+        optBtn.name = opt.name
+
+        local optText = optBtn:CreateFontString(nil, "OVERLAY")
+        SetGUIFont(optText, 12, "")
+        optText:SetPoint("LEFT", 6, 0)
+        optText:SetPoint("RIGHT", -6, 0)
+        optText:SetJustifyH("CENTER")
+        optText:SetText(opt.name)
+
+        local optBg = optBtn:CreateTexture(nil, "BACKGROUND")
+        optBg:SetAllPoints()
+        optBg:SetTexture(bdTex)
+        optBg:SetVertexColor(1, 1, 1, 0)
+        optBtn.bg = optBg
+
+        optBtn:SetScript("OnEnter", function(self)
+            self.bg:SetVertexColor(cr, cg, cb, 0.3)
+        end)
+        optBtn:SetScript("OnLeave", function(self)
+            self.bg:SetVertexColor(1, 1, 1, 0)
+        end)
+        optBtn:SetScript("OnClick", function(self)
+            local previousLanguage = ns.GetActiveLanguage and ns:GetActiveLanguage() or "enUS"
+            if not TurboPlatesDB then TurboPlatesDB = {} end
+            TurboPlatesDB.language = self.value
+            text:SetText(self.name)
+            list:Hide()
+            arrow:SetRotation(math.rad(180))
+            if self.value ~= previousLanguage then
+                StaticPopup_Show("TURBOPLATES_LANGUAGE_RELOAD")
+            end
+        end)
+    end
+
+    btn:SetScript("OnClick", function(self)
+        if list:IsShown() then
+            list:Hide()
+            arrow:SetRotation(math.rad(180))
+        else
+            list:ClearAllPoints()
+            list:SetPoint("TOP", self, "BOTTOM", 0, -2)
+            list:Show()
+            arrow:SetRotation(math.rad(0))
+        end
+    end)
+
+    btn:SetScript("OnHide", function() list:Hide() end)
+    btn:SetScript("OnShow", function() Refresh(); list:Hide() end)
+    btn:SetScript("OnEnter", function(self) self.__border:SetColor(cr, cg, cb, 0.5) end)
+    btn:SetScript("OnLeave", function(self) self.__border:SetColor(1, 1, 1, 0.2) end)
+    Refresh()
+
+    return btn
+end
+
 -- Tab system
-local tabNames = {L.TabGeneral, L.TabStyle, L.TabFonts, L.TabColors, L.TabCastbar, L.TabDebuffs, L.TabBuffs, L.TabPersonal, L.TabCP, L.TabObjectives, L.TabStacking, L.TabTurboDebuffs, L.TabMisc, L.TabProfiles or "Profiles"}
+local tabKeys = {"TabGeneral", "TabStyle", "TabFonts", "TabColors", "TabCastbar", "TabDebuffs", "TabBuffs", "TabPersonal", "TabCP", "TabObjectives", "TabStacking", "TabTurboDebuffs", "TabMisc", "TabProfiles"}
 
 local function SelectTab(index)
     for i, tab in pairs(guiTab) do
@@ -1606,12 +1780,14 @@ local function SelectTab(index)
     end
 end
 
-local function CreateTab(parent, index, name)
+local function CreateTab(parent, index, localeKey)
     local tab = CreateFrame("Button", nil, parent, "BackdropTemplate")
     tab:SetPoint("TOPLEFT", 15, -28.75 * (index - 1) - 50)
     tab:SetSize(120, 26)
     CreateBD(tab, 0.3)
-    CreateFS(tab, 12, name, "system", "LEFT", 10, 0)
+    local name = L[localeKey] or localeKey
+    tab.label = CreateFS(tab, 12, name, "system", "LEFT", 10, 0)
+    tab.localeKey = localeKey
     tab.index = index
 
     tab:SetScript("OnClick", function(self)
@@ -1717,13 +1893,13 @@ local function CreatePreview(parent)
 
     -- Name text
     local nameText = hp:CreateFontString(nil, "OVERLAY")
-    nameText:SetFont(GUI_FONT, 10, "OUTLINE")
-    nameText:SetPoint("BOTTOM", hp, "TOP", 0, 3)
+    SetGUIFont(nameText, 10, "OUTLINE")
+    nameText:SetPoint("BOTTOM", hp, "TOP", 0, 2 + (d.nameTextYOffset or 0))
     nameText:SetText("Dummy")
 
     -- Level text (shown right of name when enabled)
     local levelText = hp:CreateFontString(nil, "OVERLAY")
-    levelText:SetFont(GUI_FONT, 10, "OUTLINE")
+    SetGUIFont(levelText, 10, "OUTLINE")
     levelText:SetPoint("LEFT", nameText, "RIGHT", 2, 0)
     levelText:SetText("60")
     levelText:SetTextColor(1, 1, 0)  -- Yellow (same level as player)
@@ -1731,12 +1907,12 @@ local function CreatePreview(parent)
 
     -- Castbar text
     local cbTime = cb:CreateFontString(nil, "OVERLAY")
-    cbTime:SetFont(GUI_FONT, 8, "OUTLINE")
+    SetGUIFont(cbTime, 8, "OUTLINE")
     cbTime:SetPoint("RIGHT", cb, -4, 0)
     cbTime:SetText("1.5")
 
     local cbName = cb:CreateFontString(nil, "OVERLAY")
-    cbName:SetFont(GUI_FONT, 8, "OUTLINE")
+    SetGUIFont(cbName, 8, "OUTLINE")
     cbName:SetPoint("LEFT", cb, 4, 0)
     cbName:SetText("Casting...")
 
@@ -1774,7 +1950,7 @@ local function CreatePreview(parent)
 
     -- Health value text (centered on health bar)
     local healthText = hp:CreateFontString(nil, "OVERLAY")
-    healthText:SetFont(GUI_FONT, 10, "OUTLINE")
+    SetGUIFont(healthText, 10, "OUTLINE")
     healthText:SetPoint("CENTER", hp, "CENTER", 0, 0)
     healthText:SetText("75 - 100 (75%)")
     healthText:SetTextColor(1, 1, 1)
@@ -1852,12 +2028,12 @@ local function CreatePreview(parent)
         icon.border = CreateTextureBorder(icon, PREVIEW_BORDER_SIZE)
 
         icon.duration = icon:CreateFontString(nil, "OVERLAY")
-        icon.duration:SetFont(GUI_FONT, 10, "OUTLINE")
+        SetGUIFont(icon.duration, 10, "OUTLINE")
         icon.duration:SetPoint("BOTTOM", icon, "BOTTOM", 0, -2)
         icon.duration:SetTextColor(1, 1, 0.2)
 
         icon.count = icon:CreateFontString(nil, "OVERLAY")
-        icon.count:SetFont(GUI_FONT, 10, "OUTLINE")
+        SetGUIFont(icon.count, 10, "OUTLINE")
         icon.count:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 2, 2)
         icon.count:SetTextColor(1, 1, 1)
 
@@ -1895,7 +2071,7 @@ local function CreatePreview(parent)
     tdFrame.border = CreateTextureBorder(tdFrame, 1)
 
     tdFrame.timer = tdFrame:CreateFontString(nil, "OVERLAY")
-    tdFrame.timer:SetFont(GUI_FONT, 12, "OUTLINE")
+    SetGUIFont(tdFrame.timer, 12, "OUTLINE")
     tdFrame.timer:SetPoint("CENTER", 0, 0)
     tdFrame.timer:SetText("5")
     tdFrame.timer:SetTextColor(1, 1, 1)
@@ -2073,14 +2249,15 @@ local function CreatePreview(parent)
 
         -- Apply name positioning based on nameInHealthbar setting
         local nameInHealthbar = db.nameInHealthbar or false
+        local nameTextYOffset = db.nameTextYOffset or d.nameTextYOffset or 0
         nameText:ClearAllPoints()
         if nameInHealthbar then
-            nameText:SetPoint("LEFT", hp, "LEFT", 4, 0)
+            nameText:SetPoint("LEFT", hp, "LEFT", 4, nameTextYOffset)
             nameText:SetJustifyH("LEFT")
             local hpWidth = db.width or d.width
             nameText:SetWidth(hpWidth * 0.6)
         else
-            nameText:SetPoint("BOTTOM", hp, "TOP", 0, 3)
+            nameText:SetPoint("BOTTOM", hp, "TOP", 0, 2 + nameTextYOffset)
             nameText:SetJustifyH("CENTER")
             nameText:SetWidth(0)
         end
@@ -2424,8 +2601,8 @@ local function CreatePreview(parent)
                 -- Apply font sizes (separate for duration and stacks)
                 local fs = fontSize or 10
                 local sfs = stackFontSize or 10
-                icon.duration:SetFont(GUI_FONT, fs, "OUTLINE")
-                icon.count:SetFont(GUI_FONT, sfs, "OUTLINE")
+                SetGUIFont(icon.duration, fs, "OUTLINE")
+                SetGUIFont(icon.count, sfs, "OUTLINE")
 
                 -- Position duration text based on anchor setting (textPoint, iconPoint, offsetX, offsetY)
                 icon.duration:ClearAllPoints()
@@ -2579,7 +2756,7 @@ end
 function ns:ToggleGUI()
     -- Combat lockdown check
     if InCombatLockdown() then
-        print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Options will open after combat ends.")
+        print(L.OptionsWillOpen)
         reopenAfterCombat = true
         return
     end
@@ -2625,6 +2802,7 @@ function ns:ToggleGUI()
     local coloredTitle = "|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r"
     CreateFS(guiFrame, 16, coloredTitle, nil, "TOP", 0, -10)
     CreateFS(guiFrame, 12, "v"..version, nil, "TOP", 0, -28)
+    CreateLanguageDropdown(guiFrame, 150, -10)
 
     -- Aura Whitelist button (top right)
     local auraWhitelist = CreateButton(guiFrame, 100, 22, L.AuraWhitelist)
@@ -2639,13 +2817,13 @@ function ns:ToggleGUI()
     auraBlacklist:SetScript("OnClick", function() PlaySound(856); OpenSpellListPanel("blacklist") end)
 
     -- Close button (bottom right)
-    local close = CreateButton(guiFrame, 80, 22, "Close")
+    local close = CreateButton(guiFrame, 80, 22, L.Close or "Close")
     close:SetPoint("BOTTOMRIGHT", -20, 15)
     close:SetFrameLevel(guiFrame:GetFrameLevel() + 50)
     close:SetScript("OnClick", function() PlaySound(856); guiFrame:Hide() end)
 
     -- Reset button (bottom right, next to close)
-    local reset = CreateButton(guiFrame, 80, 22, "Reset")
+    local reset = CreateButton(guiFrame, 80, 22, L.Reset or "Reset")
     reset:SetPoint("RIGHT", close, "LEFT", -10, 0)
     reset:SetFrameLevel(guiFrame:GetFrameLevel() + 50)
     reset:SetScript("OnClick", function() PlaySound(856); StaticPopup_Show("TURBOPLATES_RESET") end)
@@ -2735,8 +2913,8 @@ function ns:ToggleGUI()
     mmToggle:SetChecked(not TurboPlatesDB.minimap.hide)
 
     -- Create tabs on left
-    for i, name in ipairs(tabNames) do
-        guiTab[i] = CreateTab(guiFrame, i, name)
+    for i, key in ipairs(tabKeys) do
+        guiTab[i] = CreateTab(guiFrame, i, key)
 
         -- Create simple frame for each tab page (no scrollbar)
         guiPage[i] = CreateFrame("Frame", nil, guiFrame, "BackdropTemplate")
@@ -2813,19 +2991,19 @@ function ns:ToggleGUI()
     local enemyUnits = CreateCVarCheckBox(p1, "nameplateShowEnemies", L.EnemyUnits, 260, y - 25)
 
     -- Enemy children - enable parent when any child is checked
-    local enemyPets = CreateCVarCheckBox(p1, "nameplateShowEnemyPets", L.ShowPetsLabel, 280, y - 55, function(self)
+    local enemyPets = CreateCVarCheckBox(p1, "nameplateShowEnemyPets", L.ShowPetsLabel, 288, y - 55, function(self)
         if self:GetChecked() and not enemyUnits:GetChecked() then
             enemyUnits:SetChecked(true)
             SetCVar("nameplateShowEnemies", "1")
         end
     end)
-    local enemyGuardians = CreateCVarCheckBox(p1, "nameplateShowEnemyGuardians", L.ShowGuardians, 280, y - 85, function(self)
+    local enemyGuardians = CreateCVarCheckBox(p1, "nameplateShowEnemyGuardians", L.ShowGuardians, 288, y - 85, function(self)
         if self:GetChecked() and not enemyUnits:GetChecked() then
             enemyUnits:SetChecked(true)
             SetCVar("nameplateShowEnemies", "1")
         end
     end)
-    local enemyTotems = CreateCVarCheckBox(p1, "nameplateShowEnemyTotems", L.ShowTotems, 280, y - 115, function(self)
+    local enemyTotems = CreateCVarCheckBox(p1, "nameplateShowEnemyTotems", L.ShowTotems, 288, y - 115, function(self)
         if self:GetChecked() and not enemyUnits:GetChecked() then
             enemyUnits:SetChecked(true)
             SetCVar("nameplateShowEnemies", "1")
@@ -2930,10 +3108,10 @@ function ns:ToggleGUI()
 
     -- Healer marks dropdown (CLEU-based healer detection)
     local healerMarksOpts = {
-        {name = "Disabled", value = 0},
-        {name = "Enemies Only", value = 1},
-        {name = "Friendly Only", value = 2},
-        {name = "Both", value = 3},
+        {name = L.HealerMarksDisabled, value = 0},
+        {name = L.HealerMarksEnemiesOnly, value = 1},
+        {name = L.HealerMarksFriendlyOnly, value = 2},
+        {name = L.HealerMarksBoth, value = 3},
     }
     CreateDropdown(p1, "healerMarks", L.HealerMarks, healerMarksOpts, 260, y - 320)
 
@@ -2962,7 +3140,7 @@ function ns:ToggleGUI()
     CreateSlider(p2, "petScale", L.PetScale, 0.3, 1.5, 260, y - 220, true, nil, "%", 100)
 
     -- Row 6: Raid Marker Anchor & Raid Marker Size
-    local anchorOpts = {{name = "Left", value = "LEFT"}, {name = "Right", value = "RIGHT"}, {name = "Top (Above Name)", value = "TOP"}}
+    local anchorOpts = {{name = L.RaidMarkerAnchorLeft, value = "LEFT"}, {name = L.RaidMarkerAnchorRight, value = "RIGHT"}, {name = L.RaidMarkerAnchorTop, value = "TOP"}}
     CreateDropdown(p2, "raidMarkerAnchor", L.RaidMarkerAnchor, anchorOpts, 20, y - 275)
 
     -- Row 7: Raid Marker Size & Raid Marker Y
@@ -3003,18 +3181,7 @@ function ns:ToggleGUI()
         {name = L.LevelIndicatorAll, value = "all"},
     }
     CreateDropdown(p3, "levelMode", L.LevelIndicator, levelModeOpts, 20, y - 235)
-
-    -- Classification Icon dropdown (anchor position)
-    local classificationAnchorOpts = {
-        {name = L.ClassificationDisabled, value = "disabled"},
-        {name = L.ClassificationTopLeft, value = "TOPLEFT"},
-        {name = L.ClassificationTopRight, value = "TOPRIGHT"},
-        {name = L.ClassificationTop, value = "TOP"},
-        {name = L.ClassificationBottom, value = "BOTTOM"},
-        {name = L.ClassificationBottomLeft, value = "BOTTOMLEFT"},
-        {name = L.ClassificationBottomRight, value = "BOTTOMRIGHT"},
-    }
-    CreateDropdown(p3, "classificationAnchor", L.ClassificationAnchor, classificationAnchorOpts, 260, y - 235)
+    CreateSlider(p3, "nameTextYOffset", L.NameTextYOffset, -10, 10, 260, y - 235, false, nil, "px")
 
     -- Threat Text Display dropdown
     local threatTextAnchorOpts = {
@@ -3067,6 +3234,7 @@ function ns:ToggleGUI()
     CreateFS(p4, 12, L.TargetPvPColors or "Target/PvP Colors:", "system", "TOPLEFT", 20, y - 275)
     CreateColorSwatch(p4, "targetGlowColor", L.TargetGlowColor, 20, y - 300)
     CreateColorSwatch(p4, "targetingMeColor", L.TargetingMeColor, 150, y - 300)
+    CreateColorSwatch(p4, "mouseoverGlowColor", L.MouseoverGlowColor, 280, y - 300)
 
     -- Aura Border colors section (note: uses auras table, needs special handling)
     CreateFS(p4, 12, L.AuraColors or "Aura Border Colors:", "system", "TOPLEFT", 20, y - 340)
@@ -3203,7 +3371,7 @@ function ns:ToggleGUI()
     local hlInputBox = CreateFrame("EditBox", nil, p5, "BackdropTemplate")
     hlInputBox:SetSize(130, 22)
     hlInputBox:SetPoint("TOPLEFT", 260, y - 22)
-    hlInputBox:SetFont(GUI_FONT, 11, "")
+    SetGUIFont(hlInputBox, 11, "")
     hlInputBox:SetAutoFocus(false)
     hlInputBox:SetNumeric(true)
     hlInputBox:SetMaxLetters(10)
@@ -3216,7 +3384,7 @@ function ns:ToggleGUI()
     -- Placeholder text
     local hlPlaceholder = hlInputBox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     hlPlaceholder:SetPoint("LEFT", 6, 0)
-    hlPlaceholder:SetText("Spell ID")
+    hlPlaceholder:SetText(L.SpellIDInput)
     hlPlaceholder:SetTextColor(0.5, 0.5, 0.5)
     hlInputBox:SetScript("OnEditFocusGained", function() hlPlaceholder:Hide() end)
     hlInputBox:SetScript("OnEditFocusLost", function(self)
@@ -3431,7 +3599,7 @@ function ns:ToggleGUI()
                 end
                 RefreshHighlightList()
                 if removedName then
-                    print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Removed from Highlight List - " .. removedName)
+                    TPPrint(L.RemovedFromHL:format(removedName))
                 end
             end)
         end
@@ -3465,7 +3633,7 @@ function ns:ToggleGUI()
 
         if not TurboPlatesDB.highlightSpells then TurboPlatesDB.highlightSpells = {} end
         if TurboPlatesDB.highlightSpells[spellID] then
-            print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Spell already in Highlight List")
+            TPPrint(L.SpellAlreadyInHL)
             return
         end
 
@@ -3478,7 +3646,7 @@ function ns:ToggleGUI()
         hlInputBox:SetText("")
         hlPreview:Hide()
         RefreshHighlightList()
-        print("|cff4fa3ffT|cff5fb6f7u|cff6fcaefr|cff7fdee7b|cff8ff2d8o|cff9ff6b0P|cfffff68fl|cffffd36da|cffffb24at|cffff9138e|cffff3300s|r: Added to Highlight List - " .. name)
+        TPPrint(L.AddedToHL:format(name))
     end)
 
     hlInputBox:HookScript("OnEnterPressed", function() hlAddBtn:Click() end)
@@ -3550,7 +3718,7 @@ function ns:ToggleGUI()
         frame:SetPoint("TOPLEFT", x, y)
 
         local title = frame:CreateFontString(nil, "OVERLAY")
-        title:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(title, 12, "")
         title:SetPoint("TOPLEFT", 0, 0)
         title:SetText(label)
         title:SetTextColor(1, 0.8, 0)
@@ -3581,19 +3749,19 @@ function ns:ToggleGUI()
         slider:EnableMouseWheel(true)
 
         local low = frame:CreateFontString(nil, "OVERLAY")
-        low:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(low, 10, "")
         low:SetPoint("TOPLEFT", sliderBg, "BOTTOMLEFT", 0, -2)
         low:SetText(zeroText or (tostring(minVal) .. suffix))
         low:SetTextColor(0.6, 0.6, 0.6)
 
         local high = frame:CreateFontString(nil, "OVERLAY")
-        high:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(high, 10, "")
         high:SetPoint("TOPRIGHT", sliderBg, "BOTTOMRIGHT", 0, -2)
         high:SetText(tostring(maxVal) .. suffix)
         high:SetTextColor(0.6, 0.6, 0.6)
 
         local valueText = frame:CreateFontString(nil, "OVERLAY")
-        valueText:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(valueText, 12, "")
         valueText:SetPoint("TOP", sliderBg, "BOTTOM", 0, -2)
 
         local function GetVal()
@@ -3651,7 +3819,7 @@ function ns:ToggleGUI()
         local btnYOffset = 0
         if label and label ~= "" then
             local title = frame:CreateFontString(nil, "OVERLAY")
-            title:SetFont(GUI_FONT, 12, "")
+            SetGUIFont(title, 12, "")
             title:SetPoint("TOPLEFT", 0, 0)
             title:SetText(label)
             title:SetTextColor(1, 0.8, 0)
@@ -3665,7 +3833,7 @@ function ns:ToggleGUI()
         btn.__border:SetColor(1, 1, 1, 0.2)
 
         local text = btn:CreateFontString(nil, "OVERLAY")
-        text:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(text, 12, "")
         text:SetPoint("LEFT", 8, 0)
         text:SetPoint("RIGHT", -22, 0)
         text:SetJustifyH("LEFT")
@@ -3711,7 +3879,7 @@ function ns:ToggleGUI()
             optBtn:SetPoint("TOPLEFT", 3, -3 - (i - 1) * 20)
 
             local optText = optBtn:CreateFontString(nil, "OVERLAY")
-            optText:SetFont(GUI_FONT, 12, "")
+            SetGUIFont(optText, 12, "")
             optText:SetPoint("LEFT", 6, 0)
             optText:SetText(opt.name)
             optBtn.text = optText
@@ -4069,7 +4237,7 @@ function ns:ToggleGUI()
         frame:SetPoint("TOPLEFT", x, y)
 
         local title = frame:CreateFontString(nil, "OVERLAY")
-        title:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(title, 12, "")
         title:SetPoint("TOPLEFT", 0, 0)
         title:SetText(label)
         title:SetTextColor(1, 0.8, 0)
@@ -4100,19 +4268,19 @@ function ns:ToggleGUI()
         slider:EnableMouseWheel(true)
 
         local low = frame:CreateFontString(nil, "OVERLAY")
-        low:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(low, 10, "")
         low:SetPoint("TOPLEFT", sliderBg, "BOTTOMLEFT", 0, -2)
         low:SetText(minVal .. suffix)
         low:SetTextColor(0.6, 0.6, 0.6)
 
         local high = frame:CreateFontString(nil, "OVERLAY")
-        high:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(high, 10, "")
         high:SetPoint("TOPRIGHT", sliderBg, "BOTTOMRIGHT", 0, -2)
         high:SetText(maxVal .. suffix)
         high:SetTextColor(0.6, 0.6, 0.6)
 
         local valueText = frame:CreateFontString(nil, "OVERLAY")
-        valueText:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(valueText, 12, "")
         valueText:SetPoint("TOP", sliderBg, "BOTTOM", 0, -2)
 
         local function GetVal()
@@ -4158,7 +4326,7 @@ function ns:ToggleGUI()
         frame:SetPoint("TOPLEFT", x, y)
 
         local title = frame:CreateFontString(nil, "OVERLAY")
-        title:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(title, 12, "")
         title:SetPoint("TOPLEFT", 0, 0)
         title:SetText(label)
         title:SetTextColor(1, 0.8, 0)
@@ -4170,7 +4338,7 @@ function ns:ToggleGUI()
         btn.__border:SetColor(1, 1, 1, 0.2)
 
         local text = btn:CreateFontString(nil, "OVERLAY")
-        text:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(text, 12, "")
         text:SetPoint("LEFT", 8, 0)
         text:SetPoint("RIGHT", -22, 0)
         text:SetJustifyH("LEFT")
@@ -4222,7 +4390,7 @@ function ns:ToggleGUI()
             optBtn:SetPoint("TOPLEFT", 3, -3 - (i - 1) * 20)
 
             local optText = optBtn:CreateFontString(nil, "OVERLAY")
-            optText:SetFont(GUI_FONT, 12, "")
+            SetGUIFont(optText, 12, "")
             optText:SetPoint("LEFT", 6, 0)
             optText:SetText(opt.name)
             optBtn.text = optText
@@ -4509,7 +4677,7 @@ function ns:ToggleGUI()
     CreateSlider(p9, "cpPersonalX", L.CPPersonalX, -50, 50, 20, y - 170, false, nil, "px")
     CreateSlider(p9, "cpPersonalY", L.CPPersonalY, -20, 20, 260, y - 170, false, nil, "px")
 
-    -- TAB 10: Objectives (Quest Icons)
+    -- TAB 10: Mob Indicators (Quest + Elite/Boss Icons)
     local p10 = guiPage[10]
     y = -10
 
@@ -4526,6 +4694,13 @@ function ns:ToggleGUI()
     -- X/Y position sliders
     CreateSlider(p10, "questIconX", L.QuestIconX, -50, 50, 20, y - 145, false, nil, "px")
     CreateSlider(p10, "questIconY", L.QuestIconY, -50, 50, 260, y - 145, false, nil, "px")
+
+    -- Elite/Boss indicator controls
+    CreateDropdown(p10, "classificationStyle", L.EliteBossIndicator, ns.EliteBossIndicatorStyles, 20, y - 210)
+    CreateDropdown(p10, "classificationAnchor", L.EliteBossIconAnchor, ns.EliteBossIconAnchors, 260, y - 210)
+    CreateSlider(p10, "classificationX", L.EliteBossIconX, -100, 100, 20, y - 275, false, nil, "px")
+    CreateSlider(p10, "classificationY", L.EliteBossIconY, -100, 100, 260, y - 275, false, nil, "px")
+    CreateSlider(p10, "classificationSize", L.EliteBossIconSize, 8, 48, 20, y - 340, false, nil, "px")
 
     -- ==========================================================================
     -- TAB 11: Stacking (Custom nameplate stacking algorithm)
@@ -4602,7 +4777,7 @@ function ns:ToggleGUI()
         frame:SetPoint("TOPLEFT", x, y)
 
         local title = frame:CreateFontString(nil, "OVERLAY")
-        title:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(title, 12, "")
         title:SetPoint("TOPLEFT", 0, 0)
         title:SetText(label)
         title:SetTextColor(1, 0.8, 0)
@@ -4633,21 +4808,21 @@ function ns:ToggleGUI()
         slider:EnableMouseWheel(true)
 
         local low = frame:CreateFontString(nil, "OVERLAY")
-        low:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(low, 10, "")
         low:SetPoint("TOPLEFT", sliderBg, "BOTTOMLEFT", 0, -2)
         local lowDisplay = minVal * displayMultiplier + displayOffset
         low:SetText((displayMultiplier > 1 and tostring(math.floor(lowDisplay)) or (isFloat and string.format("%.2f", minVal) or tostring(minVal))) .. suffix)
         low:SetTextColor(0.6, 0.6, 0.6)
 
         local high = frame:CreateFontString(nil, "OVERLAY")
-        high:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(high, 10, "")
         high:SetPoint("TOPRIGHT", sliderBg, "BOTTOMRIGHT", 0, -2)
         local highDisplay = maxVal * displayMultiplier + displayOffset
         high:SetText((displayMultiplier > 1 and tostring(math.floor(highDisplay)) or (isFloat and string.format("%.2f", maxVal) or tostring(maxVal))) .. suffix)
         high:SetTextColor(0.6, 0.6, 0.6)
 
         local valueText = frame:CreateFontString(nil, "OVERLAY")
-        valueText:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(valueText, 12, "")
         valueText:SetPoint("TOP", sliderBg, "BOTTOM", 0, -2)
 
         local function GetVal()
@@ -4720,7 +4895,7 @@ function ns:ToggleGUI()
     presetFrame:SetPoint("TOPLEFT", 260, y)
 
     local presetTitle = presetFrame:CreateFontString(nil, "OVERLAY")
-    presetTitle:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(presetTitle, 12, "")
     presetTitle:SetPoint("TOPLEFT", 0, 0)
     presetTitle:SetText(L.StackingPreset or "Behavior Preset")
     presetTitle:SetTextColor(1, 0.8, 0)
@@ -4732,7 +4907,7 @@ function ns:ToggleGUI()
     presetBtn.__border:SetColor(1, 1, 1, 0.2)
 
     local presetText = presetBtn:CreateFontString(nil, "OVERLAY")
-    presetText:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(presetText, 12, "")
     presetText:SetPoint("LEFT", 8, 0)
     presetText:SetPoint("RIGHT", -22, 0)
     presetText:SetJustifyH("LEFT")
@@ -4819,7 +4994,7 @@ function ns:ToggleGUI()
         optBtn:SetPoint("TOPLEFT", 3, -3 - (i - 1) * 20)
 
         local optText = optBtn:CreateFontString(nil, "OVERLAY")
-        optText:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(optText, 12, "")
         optText:SetPoint("LEFT", 6, 0)
         optText:SetText(opt.name)
 
@@ -4930,7 +5105,7 @@ function ns:ToggleGUI()
 
     -- Info note about clickable area dependency
     local stackingNote = p11:CreateFontString(nil, "OVERLAY")
-    stackingNote:SetFont(GUI_FONT, 11, "")
+    SetGUIFont(stackingNote, 11, "")
     stackingNote:SetPoint("TOPLEFT", 20, y - 230)
     stackingNote:SetText(L.StackingClickboxNote or "NB! Stacking offsets are based on Clickable Nameplate Size values (under Misc tab)")
     stackingNote:SetTextColor(0.7, 0.7, 0.7)
@@ -5007,7 +5182,7 @@ function ns:ToggleGUI()
         frame:SetPoint("TOPLEFT", x, y)
 
         local title = frame:CreateFontString(nil, "OVERLAY")
-        title:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(title, 12, "")
         title:SetPoint("TOPLEFT", 0, 0)
         title:SetText(label)
         title:SetTextColor(1, 0.8, 0)
@@ -5038,19 +5213,19 @@ function ns:ToggleGUI()
         slider:EnableMouseWheel(true)
 
         local low = frame:CreateFontString(nil, "OVERLAY")
-        low:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(low, 10, "")
         low:SetPoint("TOPLEFT", sliderBg, "BOTTOMLEFT", 0, -2)
         low:SetText(tostring(minVal) .. suffix)
         low:SetTextColor(0.6, 0.6, 0.6)
 
         local high = frame:CreateFontString(nil, "OVERLAY")
-        high:SetFont(GUI_FONT, 10, "")
+        SetGUIFont(high, 10, "")
         high:SetPoint("TOPRIGHT", sliderBg, "BOTTOMRIGHT", 0, -2)
         high:SetText(tostring(maxVal) .. suffix)
         high:SetTextColor(0.6, 0.6, 0.6)
 
         local valueText = frame:CreateFontString(nil, "OVERLAY")
-        valueText:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(valueText, 12, "")
         valueText:SetPoint("TOP", sliderBg, "BOTTOM", 0, -2)
 
         local function FormatValue(v)
@@ -5109,7 +5284,7 @@ function ns:ToggleGUI()
         frame:SetPoint("TOPLEFT", x, y)
 
         local title = frame:CreateFontString(nil, "OVERLAY")
-        title:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(title, 12, "")
         title:SetPoint("TOPLEFT", 0, 0)
         title:SetText(label)
         title:SetTextColor(1, 0.8, 0)
@@ -5121,7 +5296,7 @@ function ns:ToggleGUI()
         btn.__border:SetColor(1, 1, 1, 0.2)
 
         local text = btn:CreateFontString(nil, "OVERLAY")
-        text:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(text, 12, "")
         text:SetPoint("LEFT", 8, 0)
         text:SetPoint("RIGHT", -22, 0)
         text:SetJustifyH("LEFT")
@@ -5158,7 +5333,7 @@ function ns:ToggleGUI()
             optBtn:SetPoint("TOPLEFT", 3, -3 - (i - 1) * 20)
 
             local optText = optBtn:CreateFontString(nil, "OVERLAY")
-            optText:SetFont(GUI_FONT, 12, "")
+            SetGUIFont(optText, 12, "")
             optText:SetPoint("LEFT", 6, 0)
             optText:SetText(opt.name)
             optText:SetTextColor(0.9, 0.9, 0.9)
@@ -5210,17 +5385,17 @@ function ns:ToggleGUI()
     end
 
     -- Main enable checkbox
-    local enableCB = CreateTDCheckBox(p12, "enabled", "Enable TurboDebuffs", 20, y)
+    local enableCB = CreateTDCheckBox(p12, "enabled", L.EnableTurboDebuffs, 20, y)
     enableCB:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Enable TurboDebuffs", 1, 1, 1)
-        GameTooltip:AddLine("Performance optimized custom 'BigDebuffs' integration, built from scratch for Ascension. Respects Aura Blacklist entries.", nil, nil, nil, true)
+        GameTooltip:SetText(L.EnableTurboDebuffs, 1, 1, 1)
+        GameTooltip:AddLine(L.TurboDebuffsDesc, nil, nil, nil, true)
         GameTooltip:Show()
     end)
     enableCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Show for Friendlies checkbox (aligned with Name-Only column)
-    local friendlyCB = CreateTDCheckBox(p12, "showFriendly", "Show for Friendlies", 260, y)
+    local friendlyCB = CreateTDCheckBox(p12, "showFriendly", L.TDShowForFriendlies, 260, y)
 
     -- Grey out friendly checkbox when TurboDebuffs disabled
     local function UpdateFriendlyState()
@@ -5239,70 +5414,70 @@ function ns:ToggleGUI()
 
     -- Column headers
     local fullHeader = p12:CreateFontString(nil, "OVERLAY")
-    fullHeader:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(fullHeader, 12, "")
     fullHeader:SetPoint("TOPLEFT", 20, y - 30)
-    fullHeader:SetText("Normal Nameplates:")
+    fullHeader:SetText(L.TDNormalNameplates)
     fullHeader:SetTextColor(1, 0.8, 0)
 
     local nameOnlyHeader = p12:CreateFontString(nil, "OVERLAY")
-    nameOnlyHeader:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(nameOnlyHeader, 12, "")
     nameOnlyHeader:SetPoint("TOPLEFT", 260, y - 30)
-    nameOnlyHeader:SetText("Friendly Name-Only Plates:")
+    nameOnlyHeader:SetText(L.TDFriendlyNameOnly)
     nameOnlyHeader:SetTextColor(1, 0.8, 0)
 
     -- Anchor dropdown options
     local anchorOpts = {
-        {name = "Left", value = "LEFT"},
-        {name = "Right", value = "RIGHT"},
-        {name = "Top", value = "TOP"},
-        {name = "Bottom", value = "BOTTOM"},
+        {name = L.TDLeft, value = "LEFT"},
+        {name = L.TDRight, value = "RIGHT"},
+        {name = L.TDTop, value = "TOP"},
+        {name = L.TDBottom, value = "BOTTOM"},
     }
 
     -- Row 1: Icon Position dropdowns
-    CreateTDDropdown(p12, "anchor", "Icon Position", anchorOpts, 20, y - 48)
-    CreateTDDropdown(p12, "nameOnlyAnchor", "Icon Position", anchorOpts, 260, y - 48)
+    CreateTDDropdown(p12, "anchor", L.TDIconPosition, anchorOpts, 20, y - 48)
+    CreateTDDropdown(p12, "nameOnlyAnchor", L.TDIconPosition, anchorOpts, 260, y - 48)
 
     -- Row 2: Icon Size sliders
-    CreateTDSlider(p12, "size", "Icon Size", 16, 64, 20, y - 93, false, "px")
-    CreateTDSlider(p12, "nameOnlySize", "Icon Size", 12, 48, 260, y - 93, false, "px")
+    CreateTDSlider(p12, "size", L.TDIconSize, 16, 64, 20, y - 93, false, "px")
+    CreateTDSlider(p12, "nameOnlySize", L.TDIconSize, 12, 48, 260, y - 93, false, "px")
 
     -- Row 3: Timer Font Size sliders
-    CreateTDSlider(p12, "timerSize", "Timer Font Size", 8, 24, 20, y - 138, false, "px")
-    CreateTDSlider(p12, "nameOnlyTimerSize", "Timer Font Size", 6, 18, 260, y - 138, false, "px")
+    CreateTDSlider(p12, "timerSize", L.TDTimerFontSize, 8, 24, 20, y - 138, false, "px")
+    CreateTDSlider(p12, "nameOnlyTimerSize", L.TDTimerFontSize, 6, 18, 260, y - 138, false, "px")
 
     -- Row 4: X Offset sliders
-    CreateTDSlider(p12, "xOffset", "X Offset", -50, 50, 20, y - 183, false, "px")
-    CreateTDSlider(p12, "nameOnlyXOffset", "X Offset", -50, 50, 260, y - 183, false, "px")
+    CreateTDSlider(p12, "xOffset", L.TDXOffset, -50, 50, 20, y - 183, false, "px")
+    CreateTDSlider(p12, "nameOnlyXOffset", L.TDXOffset, -50, 50, 260, y - 183, false, "px")
 
     -- Row 5: Y Offset sliders
-    CreateTDSlider(p12, "yOffset", "Y Offset", -50, 50, 20, y - 228, false, "px")
-    CreateTDSlider(p12, "nameOnlyYOffset", "Y Offset", -50, 50, 260, y - 228, false, "px")
+    CreateTDSlider(p12, "yOffset", L.TDYOffset, -50, 50, 20, y - 228, false, "px")
+    CreateTDSlider(p12, "nameOnlyYOffset", L.TDYOffset, -50, 50, 260, y - 228, false, "px")
 
     -- Section: Category Toggles
     local categoryHeader = p12:CreateFontString(nil, "OVERLAY")
-    categoryHeader:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(categoryHeader, 12, "")
     categoryHeader:SetPoint("TOPLEFT", 20, y - 273)
-    categoryHeader:SetText("Show Categories:")
+    categoryHeader:SetText(L.TDShowCategories)
     categoryHeader:SetTextColor(1, 0.8, 0)
 
     -- Category checkboxes (3 columns)
     local catY = y - 292
-    CreateTDCheckBox(p12, "immunities", "Immunities", 20, catY)
-    CreateTDCheckBox(p12, "cc", "Crowd Control", 180, catY)
-    CreateTDCheckBox(p12, "silence", "Silences", 340, catY)
+    CreateTDCheckBox(p12, "immunities", L.TDImmunities, 20, catY)
+    CreateTDCheckBox(p12, "cc", L.TDCrowdControl, 180, catY)
+    CreateTDCheckBox(p12, "silence", L.TDSilences, 340, catY)
 
     catY = catY - 23
-    CreateTDCheckBox(p12, "interrupts", "Interrupts", 20, catY)
-    CreateTDCheckBox(p12, "roots", "Roots", 180, catY)
-    CreateTDCheckBox(p12, "disarm", "Disarms", 340, catY)
+    CreateTDCheckBox(p12, "interrupts", L.TDInterrupts, 20, catY)
+    CreateTDCheckBox(p12, "roots", L.TDRoots, 180, catY)
+    CreateTDCheckBox(p12, "disarm", L.TDDisarms, 340, catY)
 
     catY = catY - 23
-    CreateTDCheckBox(p12, "buffs_defensive", "Defensive Buffs", 20, catY)
-    CreateTDCheckBox(p12, "buffs_offensive", "Offensive Buffs", 180, catY)
-    CreateTDCheckBox(p12, "buffs_other", "Other Buffs", 340, catY)
+    CreateTDCheckBox(p12, "buffs_defensive", L.TDDefensiveBuffs, 20, catY)
+    CreateTDCheckBox(p12, "buffs_offensive", L.TDOffensiveBuffs, 180, catY)
+    CreateTDCheckBox(p12, "buffs_other", L.TDOtherBuffs, 340, catY)
 
     catY = catY - 23
-    CreateTDCheckBox(p12, "snare", "Snares", 20, catY)
+    CreateTDCheckBox(p12, "snare", L.TDSnares, 20, catY)
 
     local function CreateAuraNameplateColorRules(parent, x, y)
         local function EnsureRules()
@@ -5319,15 +5494,17 @@ function ns:ToggleGUI()
         end
 
         local header = parent:CreateFontString(nil, "OVERLAY")
-        header:SetFont(GUI_FONT, 12, "")
+        SetGUIFont(header, 12, "")
         header:SetPoint("TOPLEFT", x, y)
         header:SetText(L.CustomAuraNameplateColor or "Custom Nameplate Color by Aura")
         header:SetTextColor(1, 0.8, 0)
 
+        local listWidth = 460
         local listHeight = 112
+        local addRowWidth = listWidth - 4
         local listViewportHeight = listHeight - 8
         local listBg = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-        listBg:SetSize(460, listHeight)
+        listBg:SetSize(listWidth, listHeight)
         listBg:SetPoint("TOPLEFT", x, y - 22)
         CreateBD(listBg, 0.25)
 
@@ -5571,7 +5748,7 @@ function ns:ToggleGUI()
         local function CreateSpellIDBox(parentFrame, width, showPlaceholder)
             local input = CreateFrame("EditBox", nil, parentFrame, "BackdropTemplate")
             input:SetSize(width or 92, 20)
-            input:SetFont(GUI_FONT, 12, "")
+            SetGUIFont(input, 12, "")
             input:SetAutoFocus(false)
             input:SetNumeric(true)
             input:SetMaxLetters(10)
@@ -5621,6 +5798,9 @@ function ns:ToggleGUI()
             end
         end
 
+        local addRow
+        local addBtn
+
         local function RefreshRows()
             local rules = EnsureRules()
             for _, row in pairs(rows) do
@@ -5629,6 +5809,13 @@ function ns:ToggleGUI()
 
             local needsScroll = (#rules * 26) > listViewportHeight
             local rowWidth = needsScroll and 442 or 444
+            if addRow then
+                addRow:SetWidth(addRowWidth)
+            end
+            if addBtn then
+                addBtn:ClearAllPoints()
+                addBtn:SetPoint("RIGHT", -1, 0)
+            end
 
             if #rules == 0 then
                 emptyText:Show()
@@ -5756,9 +5943,9 @@ function ns:ToggleGUI()
             UpdateRuleScrollBar()
         end
 
-        local addRow = CreateFrame("Frame", nil, parent)
-        addRow:SetSize(460, 24)
-        addRow:SetPoint("TOPLEFT", x, y - (listHeight + 30))
+        addRow = CreateFrame("Frame", nil, parent)
+        addRow:SetSize(addRowWidth, 24)
+        addRow:SetPoint("TOPLEFT", x + 4, y - (listHeight + 30))
 
         local addSwatch = CreateRuleSwatch(addRow,
             function() return newColor end,
@@ -5798,8 +5985,8 @@ function ns:ToggleGUI()
             end
         end)
 
-        local addBtn = CreateButton(addRow, 64, 22, L.AddSpell or "Add")
-        addBtn:SetPoint("RIGHT", -4, 0)
+        addBtn = CreateButton(addRow, 64, 22, L.AddSpell or "Add")
+        addBtn:SetPoint("RIGHT", -1, 0)
         addBtn:SetScript("OnClick", function()
             PlaySound(856)
             local spellID = tonumber(addInput:GetText())
@@ -5853,7 +6040,7 @@ function ns:ToggleGUI()
 
     -- Performance header (right side)
     local perfHeader = p13:CreateFontString(nil, "OVERLAY")
-    perfHeader:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(perfHeader, 12, "")
     perfHeader:SetPoint("TOPLEFT", 260, y)
     perfHeader:SetText(L.PerformanceHeader or "Performance:")
     perfHeader:SetTextColor(1, 0.8, 0)
@@ -5886,7 +6073,7 @@ function ns:ToggleGUI()
     -- Section: Nameplate Clickable Area
     y = y - 188
     local clickHeader = p13:CreateFontString(nil, "OVERLAY")
-    clickHeader:SetFont(GUI_FONT, 12, "")
+    SetGUIFont(clickHeader, 12, "")
     clickHeader:SetPoint("TOPLEFT", 20, y)
     clickHeader:SetText(L.ClickableAreaHeader or "Nameplate Clickable Area:")
     clickHeader:SetTextColor(1, 0.8, 0)
@@ -5912,7 +6099,7 @@ function ns:ToggleGUI()
 
     -- Description
     local desc = p14:CreateFontString(nil, "OVERLAY")
-    desc:SetFont(GUI_FONT, 11, "")
+    SetGUIFont(desc, 11, "")
     desc:SetPoint("TOPLEFT", 20, y - 25)
     desc:SetWidth(460)
     desc:SetJustifyH("LEFT")
@@ -6081,7 +6268,7 @@ function ns:ToggleGUI()
 
     -- Status text
     local statusText = p14:CreateFontString(nil, "OVERLAY")
-    statusText:SetFont(GUI_FONT, 11, "")
+    SetGUIFont(statusText, 11, "")
     statusText:SetPoint("TOPLEFT", 20, y - 325)
     statusText:SetWidth(460)
     statusText:SetJustifyH("LEFT")
@@ -6148,11 +6335,60 @@ function ns:ToggleGUI()
     ns.UpdatePreview()
 end
 
+function ns:RefreshLocalizedStaticPopups()
+    local conflict = StaticPopupDialogs["TURBOPLATES_ADDON_CONFLICT"]
+    if conflict then
+        conflict.text = L.ConflictText
+        conflict.button1 = L.DisableIt
+        conflict.button2 = L.DisableTP
+    end
+
+    local reset = StaticPopupDialogs["TURBOPLATES_RESET"]
+    if reset then
+        reset.text = L.ResetText
+        reset.button1 = L.ResetYes
+        reset.button2 = L.ResetNo
+    end
+
+    local languageReload = StaticPopupDialogs["TURBOPLATES_LANGUAGE_RELOAD"]
+    if languageReload then
+        languageReload.text = L.LanguageReloadPrompt or L.ReloadRequired
+        languageReload.button1 = L.ReloadNow
+        languageReload.button2 = L.Later
+    end
+
+    local reloadUI = StaticPopupDialogs["TURBOPLATES_RELOAD_UI"]
+    if reloadUI then
+        reloadUI.text = L.ReloadRequired
+        reloadUI.button1 = L.ReloadNow
+        reloadUI.button2 = L.Later
+    end
+
+    local importReload = StaticPopupDialogs["TURBOPLATES_IMPORT_RELOAD"]
+    if importReload then
+        importReload.text = L.ImportReload
+        importReload.button1 = L.ReloadNow
+        importReload.button2 = L.Later
+    end
+end
+
+-- Reload UI popup for language changes
+StaticPopupDialogs["TURBOPLATES_LANGUAGE_RELOAD"] = {
+    text = L.LanguageReloadPrompt or L.ReloadRequired,
+    button1 = L.ReloadNow,
+    button2 = L.Later,
+    OnAccept = function() ReloadUI() end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -- Reload UI popup for settings that require it
 StaticPopupDialogs["TURBOPLATES_RELOAD_UI"] = {
-    text = "This setting requires a UI reload to take full effect. Reload now?",
-    button1 = "Reload",
-    button2 = "Later",
+    text = L.ReloadRequired,
+    button1 = L.ReloadNow,
+    button2 = L.Later,
     OnAccept = function() ReloadUI() end,
     timeout = 0,
     whileDead = true,
@@ -6162,9 +6398,9 @@ StaticPopupDialogs["TURBOPLATES_RELOAD_UI"] = {
 
 -- Import settings reload popup
 StaticPopupDialogs["TURBOPLATES_IMPORT_RELOAD"] = {
-    text = "Settings imported successfully!\n\nReload now to apply changes?",
-    button1 = "Reload",
-    button2 = "Later",
+    text = L.ImportReload,
+    button1 = L.ReloadNow,
+    button2 = L.Later,
     OnAccept = function() ReloadUI() end,
     timeout = 0,
     whileDead = true,
@@ -6177,14 +6413,14 @@ local function CreateLauncher()
     panel.name = "TurboPlates"
     InterfaceOptions_AddCategory(panel)
     local t = panel:CreateFontString(nil, "ARTWORK")
-    t:SetFont(GUI_FONT, 14, "")
+    SetGUIFont(t, 14, "")
     t:SetPoint("TOPLEFT", 16, -16)
     local version = GetAddOnMetadata(addonName, "Version") or "1.0.0"
-    t:SetText("TurboPlates v" .. version)
+    t:SetText((L.Title or "TurboPlates v" .. version))
     local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     btn:SetSize(200, 30)
     btn:SetPoint("CENTER")
-    btn:SetText("Open Settings")
+    btn:SetText(L.Settings or "Settings")
     btn:SetScript("OnClick", function()
         InterfaceOptionsFrame:Hide()
         ns:ToggleGUI()
@@ -6196,6 +6432,9 @@ loader:RegisterEvent("PLAYER_LOGIN")
 loader:RegisterEvent("CVAR_UPDATE")
 loader:SetScript("OnEvent", function(self, event, cvar, value)
     if event == "PLAYER_LOGIN" then
+        if ns.ApplyActiveLocale then
+            ns:ApplyActiveLocale()
+        end
         CreateLauncher()
     elseif event == "CVAR_UPDATE" then
         -- Sync CVar checkboxes when CVars change externally (keybind, console, Interface settings)

@@ -477,11 +477,11 @@ function ns:CreateCastbar(myPlate)
 
     local fontPath = ns.c_font or ns.GetFont(ns.defaults.font)
     local timeText = cb:CreateFontString(nil, "OVERLAY")
-    timeText:SetFont(fontPath, 8, "OUTLINE")
+    ns:SetFontSafe(timeText, fontPath, 8, "OUTLINE")
     timeText:SetPoint("RIGHT", cb, "RIGHT", -4, 0)
 
     local spellText = cb:CreateFontString(nil, "OVERLAY")
-    spellText:SetFont(fontPath, 8, "OUTLINE")
+    ns:SetFontSafe(spellText, fontPath, 8, "OUTLINE")
     spellText:SetPoint("LEFT", cb, "LEFT", 4, 0)
     spellText:SetPoint("RIGHT", timeText, "LEFT", -5, 0)
     spellText:SetJustifyH("LEFT")

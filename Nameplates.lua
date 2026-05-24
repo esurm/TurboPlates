@@ -369,6 +369,7 @@ function ns:UpdateDBCache()
     -- Health value display settings
     ns.c_healthValueFormat = db.healthValueFormat or "none"
     ns.c_healthValueFontSize = db.healthValueFontSize or 10
+    ns.c_nameTextYOffset = db.nameTextYOffset or 0
     ns.c_nameInHealthbar = db.nameInHealthbar == true  -- Default to false
     ns.c_hidePercentWhenFull = db.hidePercentWhenFull == true  -- Default to false (show 100%)
 
@@ -391,6 +392,8 @@ function ns:UpdateDBCache()
     ns.c_targetArrow = db.targetArrow or "none"
     local tgc = db.targetGlowColor or { r = 1, g = 1, b = 1 }
     ns.c_targetGlowColor_r, ns.c_targetGlowColor_g, ns.c_targetGlowColor_b = tgc.r, tgc.g, tgc.b
+    local mgc = db.mouseoverGlowColor or { r = 1, g = 1, b = 1 }
+    ns.c_mouseoverGlowColor_r, ns.c_mouseoverGlowColor_g, ns.c_mouseoverGlowColor_b = mgc.r, mgc.g, mgc.b
 
     -- PvP Targeting Me indicator settings
     ns.c_targetingMeIndicator = db.targetingMeIndicator or "disabled"
@@ -414,7 +417,11 @@ function ns:UpdateDBCache()
     ns.c_playerLevel = UnitLevel("player")  -- Cache player level for comparison
 
     -- Classification icon settings
-    ns.c_classificationAnchor = db.classificationAnchor or "disabled"
+    ns.c_classificationStyle = db.classificationStyle or "default"
+    ns.c_classificationAnchor = db.classificationAnchor or "TOPLEFT"
+    ns.c_classificationX = db.classificationX or 0
+    ns.c_classificationY = db.classificationY or 0
+    ns.c_classificationSize = db.classificationSize or 18
 
     -- Threat text display settings
     ns.c_threatTextAnchor = db.threatTextAnchor or "disabled"
@@ -1193,6 +1200,16 @@ local function EnsureComboPoints(myPlate, isPersonal)
 end
 
 -- Create health bar on first use (upgrades lite plate to full plate)
+local function ApplyMouseoverGlowColor(highlight)
+    if not (highlight and highlight.texture) then return end
+    highlight.texture:SetVertexColor(
+        ns.c_mouseoverGlowColor_r or 1,
+        ns.c_mouseoverGlowColor_g or 1,
+        ns.c_mouseoverGlowColor_b or 1,
+        0.25
+    )
+end
+
 local function EnsureFullPlate(myPlate)
     if myPlate.hp then return end  -- Already has health bar
 
@@ -1270,11 +1287,11 @@ local function EnsureFullPlate(myPlate)
 
     local highlightTexture = highlight:CreateTexture(nil, "OVERLAY")
     highlightTexture:SetTexture("Interface\\Buttons\\WHITE8X8")
-    highlightTexture:SetVertexColor(1, 1, 1, 0.25)
     highlightTexture:SetBlendMode("ADD")
     highlightTexture:SetAllPoints(highlight)
 
     highlight.texture = highlightTexture
+    ApplyMouseoverGlowColor(highlight)
     highlight.unit = nil  -- Set when showing
     highlight.elapsed = 0
     highlight:Hide()
@@ -1336,7 +1353,7 @@ local function EnsureFullPlate(myPlate)
         -- Inside healthbar: reparent to hp so it renders above statusbar fill
         myPlate.nameText:SetParent(hp)
         myPlate.nameText:SetDrawLayer("OVERLAY", 7)
-        PixelUtil.SetPoint(myPlate.nameText, "LEFT", hp, "LEFT", 4, 0, 1, 1)
+        PixelUtil.SetPoint(myPlate.nameText, "LEFT", hp, "LEFT", 4, ns.c_nameTextYOffset, 1, 1)
         myPlate.nameText:SetJustifyH("LEFT")
         -- Limit width and disable word wrap for ellipsis truncation
         myPlate.nameText:SetWidth(ns.c_width * 0.6)
@@ -1346,12 +1363,13 @@ local function EnsureFullPlate(myPlate)
         -- Above healthbar: parent to myPlate, centered
         myPlate.nameText:SetParent(myPlate)
         myPlate.nameText:SetDrawLayer("OVERLAY")
-        PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", hp, "TOP", 0, 3, 1, 1)
+        PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", hp, "TOP", 0, 2 + ns.c_nameTextYOffset, 1, 1)
         myPlate.nameText:SetJustifyH("CENTER")
         myPlate.nameText:SetWidth(0)  -- No width limit
         myPlate.nameText:SetWordWrap(true)
     end
     myPlate._lastNameInHealthbar = ns.c_nameInHealthbar
+    myPlate._lastNameTextYOffset = ns.c_nameTextYOffset
 
     -- Create execute range indicator (vertical line on healthbar)
     local execIndicator = hp:CreateTexture(nil, "OVERLAY")
@@ -1365,7 +1383,7 @@ local function EnsureFullPlate(myPlate)
 
     -- Create health value text
     local healthText = hp:CreateFontString(nil, "OVERLAY")
-    healthText:SetFont(ns.c_font, ns.c_healthValueFontSize, ns.c_fontOutline)
+    ns:SetFontSafe(healthText, ns.c_font, ns.c_healthValueFontSize, ns.c_fontOutline)
     healthText:SetTextColor(1, 1, 1)
     healthText:SetJustifyV("MIDDLE")
     if ns.c_nameInHealthbar then
@@ -1383,7 +1401,7 @@ local function EnsureFullPlate(myPlate)
 
     -- Create threat text (anchored dynamically based on setting)
     local threatText = myPlate:CreateFontString(nil, "OVERLAY")
-    threatText:SetFont(ns.c_font, ns.c_threatTextFontSize, ns.c_fontOutline)
+    ns:SetFontSafe(threatText, ns.c_font, ns.c_threatTextFontSize, ns.c_fontOutline)
     threatText:SetTextColor(1, 1, 1)
     threatText:SetJustifyH("CENTER")
     threatText:SetJustifyV("MIDDLE")
@@ -1392,7 +1410,7 @@ local function EnsureFullPlate(myPlate)
 
     -- Create level text (right of name, matches name font)
     local levelText = myPlate:CreateFontString(nil, "OVERLAY")
-    levelText:SetFont(ns.c_font, ns.c_fontSize, ns.c_fontOutline)
+    ns:SetFontSafe(levelText, ns.c_font, ns.c_fontSize, ns.c_fontOutline)
     PixelUtil.SetPoint(levelText, "LEFT", myPlate.nameText, "RIGHT", 2, 0, 1, 1)
     levelText:SetJustifyH("LEFT")
     levelText:SetJustifyV("MIDDLE")
@@ -1508,7 +1526,7 @@ local function EnsurePowerBar(myPlate)
     local powerText = power:CreateFontString(nil, "OVERLAY")
     PixelUtil.SetPoint(powerText, "LEFT", power, "LEFT", 0, 0, 1, 1)
     PixelUtil.SetPoint(powerText, "RIGHT", power, "RIGHT", 0, 0, 1, 1)
-    powerText:SetFont(ns.c_font, ns.c_fontSize - 2, ns.c_fontOutline)
+    ns:SetFontSafe(powerText, ns.c_font, ns.c_fontSize - 2, ns.c_fontOutline)
     powerText:SetTextColor(1, 1, 1)
     powerText:SetJustifyH("CENTER")
     powerText:SetJustifyV("MIDDLE")
@@ -1618,7 +1636,7 @@ local function CreateHeroPowerBar(myPlate, powerType, index, anchor)
     text:SetPoint("LEFT", bar, "LEFT", 0, 0)
     text:SetPoint("RIGHT", bar, "RIGHT", 0, 0)
     local powerFontSize = max(ns.c_fontSize - 2, 6)
-    text:SetFont(ns.c_font, powerFontSize, ns.c_fontOutline)
+    ns:SetFontSafe(text, ns.c_font, powerFontSize, ns.c_fontOutline)
     text:SetTextColor(1, 1, 1)
     text:SetJustifyH("CENTER")
     text:SetJustifyV("MIDDLE")
@@ -2717,8 +2735,6 @@ targetingMeFrame:Hide()
 ns.UpdateAllTargetingMe = UpdateAllTargetingMe
 ns.UpdateTargetingMePolling = UpdateTargetingMePolling
 
--- ============================================================================
-
 function ns:UpdatePlateStyle(myPlate)
     -- Only style health bar if it exists
     if myPlate.hp then
@@ -2769,6 +2785,8 @@ function ns:UpdatePlateStyle(myPlate)
         end
     end
 
+    ApplyMouseoverGlowColor(myPlate.highlight)
+
     -- Personal plate settings (comprehensive update when options change)
     if myPlate.isPlayer and myPlate.hp then
         -- Health bar dimensions
@@ -2808,7 +2826,7 @@ function ns:UpdatePlateStyle(myPlate)
         if myPlate.healthText then
             local healthFontSize = ns.c_healthValueFontSize
             if myPlate._lastPersonalHealthFont ~= ns.c_font or myPlate._lastPersonalHealthFontSize ~= healthFontSize or myPlate._lastPersonalHealthFontOutline ~= ns.c_fontOutline then
-                myPlate.healthText:SetFont(ns.c_font, healthFontSize, ns.c_fontOutline)
+                ns:SetFontSafe(myPlate.healthText, ns.c_font, healthFontSize, ns.c_fontOutline)
                 myPlate._lastPersonalHealthFont = ns.c_font
                 myPlate._lastPersonalHealthFontSize = healthFontSize
                 myPlate._lastPersonalHealthFontOutline = ns.c_fontOutline
@@ -2849,7 +2867,7 @@ function ns:UpdatePlateStyle(myPlate)
                 if myPlate.powerBar.text then
                     local powerFontSize = ns.c_healthValueFontSize - 2
                     if myPlate.powerBar._lastFontSize ~= powerFontSize or myPlate.powerBar._lastFont ~= ns.c_font or myPlate.powerBar._lastFontOutline ~= ns.c_fontOutline then
-                        myPlate.powerBar.text:SetFont(ns.c_font, powerFontSize, ns.c_fontOutline)
+                        ns:SetFontSafe(myPlate.powerBar.text, ns.c_font, powerFontSize, ns.c_fontOutline)
                         myPlate.powerBar._lastFont = ns.c_font
                         myPlate.powerBar._lastFontSize = powerFontSize
                         myPlate.powerBar._lastFontOutline = ns.c_fontOutline
@@ -2891,7 +2909,7 @@ function ns:UpdatePlateStyle(myPlate)
                         -- Text font
                         if bar.text then
                             if bar._lastFont ~= ns.c_font or bar._lastFontSize ~= powerFontSize or bar._lastFontOutline ~= ns.c_fontOutline then
-                                bar.text:SetFont(ns.c_font, powerFontSize, ns.c_fontOutline)
+                                ns:SetFontSafe(bar.text, ns.c_font, powerFontSize, ns.c_fontOutline)
                                 bar._lastFont = ns.c_font
                                 bar._lastFontSize = powerFontSize
                                 bar._lastFontOutline = ns.c_fontOutline
@@ -2959,12 +2977,12 @@ function ns:UpdatePlateStyle(myPlate)
 
     -- Cache font settings (name text, guild text, level text use same cache)
     if myPlate._lastFont ~= ns.c_font or myPlate._lastFontSize ~= ns.c_fontSize or myPlate._lastFontOutline ~= ns.c_fontOutline then
-        myPlate.nameText:SetFont(ns.c_font, ns.c_fontSize, ns.c_fontOutline)
+        ns:SetFontSafe(myPlate.nameText, ns.c_font, ns.c_fontSize, ns.c_fontOutline)
         if myPlate.guildText then
-            myPlate.guildText:SetFont(ns.c_font, math_max(ns.c_fontSize - 2, 8), ns.c_fontOutline)
+            ns:SetFontSafe(myPlate.guildText, ns.c_font, math_max(ns.c_fontSize - 2, 8), ns.c_fontOutline)
         end
         if myPlate.levelText then
-            myPlate.levelText:SetFont(ns.c_font, ns.c_fontSize, ns.c_fontOutline)
+            ns:SetFontSafe(myPlate.levelText, ns.c_font, ns.c_fontSize, ns.c_fontOutline)
         end
         myPlate._lastFont = ns.c_font
         myPlate._lastFontSize = ns.c_fontSize
@@ -2973,13 +2991,13 @@ function ns:UpdatePlateStyle(myPlate)
 
     -- Update nameText and healthText positions when nameInHealthbar changes
     -- Skip totem plates (they use custom layout, restored via _wasTotem on next non-totem use)
-    if not myPlate.isPlayer and not myPlate._wasTotem and myPlate._lastNameInHealthbar ~= ns.c_nameInHealthbar then
+    if not myPlate.isPlayer and not myPlate._wasTotem and (myPlate._lastNameInHealthbar ~= ns.c_nameInHealthbar or myPlate._lastNameTextYOffset ~= ns.c_nameTextYOffset) then
         myPlate.nameText:ClearAllPoints()
         if ns.c_nameInHealthbar then
             -- Reparent to hp so it renders above statusbar fill
             myPlate.nameText:SetParent(myPlate.hp)
             myPlate.nameText:SetDrawLayer("OVERLAY", 7)
-            PixelUtil.SetPoint(myPlate.nameText, "LEFT", myPlate.hp, "LEFT", 4, 0, 1, 1)
+            PixelUtil.SetPoint(myPlate.nameText, "LEFT", myPlate.hp, "LEFT", 4, ns.c_nameTextYOffset, 1, 1)
             myPlate.nameText:SetJustifyH("LEFT")
             myPlate.nameText:SetWidth(ns.c_width * 0.6)
             myPlate.nameText:SetWordWrap(false)
@@ -2988,7 +3006,7 @@ function ns:UpdatePlateStyle(myPlate)
             -- Reparent back to myPlate
             myPlate.nameText:SetParent(myPlate)
             myPlate.nameText:SetDrawLayer("OVERLAY")
-            PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", myPlate.hp, "TOP", 0, 3, 1, 1)
+            PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", myPlate.hp, "TOP", 0, 2 + ns.c_nameTextYOffset, 1, 1)
             myPlate.nameText:SetJustifyH("CENTER")
             myPlate.nameText:SetWidth(0)
             myPlate.nameText:SetWordWrap(true)
@@ -3011,12 +3029,13 @@ function ns:UpdatePlateStyle(myPlate)
         end
 
         myPlate._lastNameInHealthbar = ns.c_nameInHealthbar
+        myPlate._lastNameTextYOffset = ns.c_nameTextYOffset
     end
 
     -- Update health text font and visibility setting
     if myPlate.healthText then
         if myPlate._lastHealthFont ~= ns.c_font or myPlate._lastHealthFontSize ~= ns.c_healthValueFontSize or myPlate._lastHealthFontOutline ~= ns.c_fontOutline then
-            myPlate.healthText:SetFont(ns.c_font, ns.c_healthValueFontSize, ns.c_fontOutline)
+            ns:SetFontSafe(myPlate.healthText, ns.c_font, ns.c_healthValueFontSize, ns.c_fontOutline)
             myPlate._lastHealthFont = ns.c_font
             myPlate._lastHealthFontSize = ns.c_healthValueFontSize
             myPlate._lastHealthFontOutline = ns.c_fontOutline
@@ -3165,9 +3184,16 @@ function ns:UpdatePlateStyle(myPlate)
     -- Reset classification icon anchor cache so it repositions on next update
     if myPlate.classifyIcon then
         myPlate.classifyIcon._anchor = nil
-        if ns.c_classificationAnchor == "disabled" then
+        myPlate.classifyIcon._style = nil
+        myPlate.classifyIcon._classification = nil
+        myPlate.classifyIcon._lastWidth = nil
+        myPlate.classifyIcon._lastHeight = nil
+        if ns.c_classificationStyle == "none" then
             myPlate.classifyIcon:Hide()
         end
+    end
+    if myPlate.unit and ns.UpdateClassificationIndicator then
+        ns.UpdateClassificationIndicator(myPlate.unit)
     end
 
     -- Only style castbar if it exists (deferred creation)
@@ -3981,7 +4007,7 @@ local function UpdateThreatText(unit, myPlate)
 
     -- Update font if changed
     if threatText._lastFont ~= ns.c_font or threatText._lastSize ~= ns.c_threatTextFontSize or threatText._lastOutline ~= ns.c_fontOutline then
-        threatText:SetFont(ns.c_font, ns.c_threatTextFontSize, ns.c_fontOutline)
+        ns:SetFontSafe(threatText, ns.c_font, ns.c_threatTextFontSize, ns.c_fontOutline)
         threatText._lastFont = ns.c_font
         threatText._lastSize = ns.c_threatTextFontSize
         threatText._lastOutline = ns.c_fontOutline
@@ -4539,7 +4565,7 @@ local function UpdateLevelText(unit)
 
     -- Font caching
     if levelText._lastFont ~= ns.c_font or levelText._lastFontSize ~= ns.c_fontSize or levelText._lastOutline ~= ns.c_fontOutline then
-        levelText:SetFont(ns.c_font, ns.c_fontSize, ns.c_fontOutline)
+        ns:SetFontSafe(levelText, ns.c_font, ns.c_fontSize, ns.c_fontOutline)
         levelText._lastFont = ns.c_font
         levelText._lastFontSize = ns.c_fontSize
         levelText._lastOutline = ns.c_fontOutline
@@ -4578,8 +4604,8 @@ end
 -- Export for Core.lua (PLAYER_LEVEL_UP handler)
 ns.UpdateLevelText = UpdateLevelText
 
--- Classification icon atlas textures
-local ClassificationAtlas = {
+-- Classification icon atlas/textures
+ns.ClassificationAtlas = {
     rare = "warfront-alliancehero",
     elite = "islands-azeriteboss",
     rareelite = "warfront-hordehero",
@@ -4587,8 +4613,89 @@ local ClassificationAtlas = {
     boss = "dungeonskull",
 }
 
+ns.ClassificationTextureStyles = {
+    colored_skulls = {
+        texture = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\ElvUI_SkullIcon.tga",
+        ratio = 0.9166666667,
+        coords = { 0.078125, 0.9375, 0.03125, 0.96875 },
+    },
+    elvui_dragons = {
+        texture = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\ElvUI_Nameplates.blp",
+        ratio = 1.3,
+        coordsByClassification = {
+            rare = { 0, 0.15234375, 0.671875, 0.90625 },
+            elite = { 0, 0.15234375, 0.359375, 0.59375 },
+            rareelite = { 0, 0.15234375, 0.359375, 0.59375 },
+            worldboss = { 0, 0.15234375, 0.359375, 0.59375 },
+            boss = { 0, 0.15234375, 0.359375, 0.59375 },
+        },
+    },
+    sre_classic = {
+        folder = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\SRE\\classic\\",
+        ratio = 1.9595959596,
+        coords = { 0.00390625, 0.76171875, 0, 0.7734375 },
+    },
+    sre_modern = {
+        folder = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\SRE\\modern\\",
+        ratio = 1.24,
+        coords = { 0, 0.96875, 0, 0.78125 },
+    },
+    sre_tiny = {
+        folder = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\SRE\\tiny\\",
+        ratio = 1.4819277108,
+        coords = { 0.0078125, 0.96875, 0, 0.6484375 },
+    },
+}
+
+ns.ClassificationSkullColors = {
+    rare = { 1, 0.82, 0 },
+    elite = { 1, 0.82, 0 },
+    rareelite = { 1, 0.45, 0 },
+    worldboss = { 1, 0.05, 0.05 },
+    boss = { 1, 0.05, 0.05 },
+}
+
+function ns.ApplyClassificationIconTexture(icon, style, classification)
+    if not ns.ClassificationAtlas[classification] then return nil end
+
+    icon:SetVertexColor(1, 1, 1, 1)
+    icon:SetTexCoord(0, 1, 0, 1)
+
+    if style == "default" then
+        local atlasName = classification and ns.ClassificationAtlas[classification]
+        if not atlasName then return nil end
+        icon:SetAtlas(atlasName)
+        return 1
+    end
+
+    local styleInfo = ns.ClassificationTextureStyles[style]
+    if not styleInfo then return nil end
+
+    if styleInfo.texture then
+        icon:SetTexture(styleInfo.texture)
+    elseif styleInfo.folder then
+        local fileKey = classification == "boss" and "worldboss" or classification
+        icon:SetTexture(styleInfo.folder .. fileKey .. ".tga")
+    end
+
+    local coords = styleInfo.coords
+    if styleInfo.coordsByClassification then
+        coords = styleInfo.coordsByClassification[classification]
+    end
+    if coords then
+        icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+    end
+
+    if style == "colored_skulls" then
+        local color = ns.ClassificationSkullColors[classification]
+        if color then icon:SetVertexColor(color[1], color[2], color[3], 1) end
+    end
+
+    return styleInfo.ratio or 1
+end
+
 -- Update classification indicator (elite/rare/boss star icon)
-local function UpdateClassificationIndicator(unit)
+function ns.UpdateClassificationIndicator(unit)
     local myPlate = ns.unitToPlate[unit]
     if not myPlate then return end
 
@@ -4596,9 +4703,10 @@ local function UpdateClassificationIndicator(unit)
     if not classifyIcon then return end
 
     local anchor = ns.c_classificationAnchor
+    local style = ns.c_classificationStyle or "default"
 
     -- Early exit for disabled or name-only plates
-    if anchor == "disabled" or myPlate.isNameOnly then
+    if style == "none" or myPlate.isNameOnly then
         classifyIcon:Hide()
         return
     end
@@ -4610,34 +4718,33 @@ local function UpdateClassificationIndicator(unit)
         classification = "boss"
     end
 
-    local atlasName = classification and ClassificationAtlas[classification]
+    local ratio = classification and ns.ApplyClassificationIconTexture(classifyIcon, style, classification)
 
-    if atlasName then
-        classifyIcon:SetAtlas(atlasName)
+    if ratio then
+        local iconHeight = ns.c_classificationSize or 18
+        local iconWidth = iconHeight * ratio
 
-        -- Size: boss/worldboss use 12x12, others use 18x18 (cached)
-        local iconSize = (classification == "boss" or classification == "worldboss") and 12 or 18
-        if classifyIcon._lastSize ~= iconSize then
-            PixelUtil.SetSize(classifyIcon, iconSize, iconSize, 1, 1)
-            classifyIcon._lastSize = iconSize
+        if classifyIcon._lastWidth ~= iconWidth or classifyIcon._lastHeight ~= iconHeight then
+            PixelUtil.SetSize(classifyIcon, iconWidth, iconHeight, 1, 1)
+            classifyIcon._lastWidth = iconWidth
+            classifyIcon._lastHeight = iconHeight
         end
 
-        -- Only reposition if anchor changed (CENTER of icon at corner position)
-        if classifyIcon._anchor ~= anchor then
+        local xOffset, yOffset = ns.c_classificationX or 0, ns.c_classificationY or 0
+        local positionKey = anchor .. ":" .. xOffset .. ":" .. yOffset .. ":" .. style .. ":" .. classification
+        if classifyIcon._anchor ~= positionKey then
             classifyIcon:ClearAllPoints()
-
-            -- Calculate offsets for top anchors (2px down, 2px inward)
-            local xOffset, yOffset = 0, 0
-            if anchor == "TOPLEFT" then
-                xOffset, yOffset = 0, -2  -- Move right and down
-            elseif anchor == "TOP" then
-                xOffset, yOffset = 0, 0  -- Move down only
-            elseif anchor == "TOPRIGHT" then
-                xOffset, yOffset = 0, -2  -- Move left and down
+            if anchor == "RIGHT" then
+                classifyIcon:SetPoint("LEFT", myPlate.hp, "RIGHT", 2 + xOffset, yOffset)
+            elseif anchor == "LEFT" then
+                classifyIcon:SetPoint("RIGHT", myPlate.hp, "LEFT", -2 + xOffset, yOffset)
+            else
+                if anchor == "TOPLEFT" or anchor == "TOPRIGHT" then
+                    yOffset = yOffset - 2
+                end
+                classifyIcon:SetPoint("CENTER", myPlate.hp, anchor or "TOPLEFT", xOffset, yOffset)
             end
-
-            classifyIcon:SetPoint("CENTER", myPlate.hp, anchor, xOffset, yOffset)
-            classifyIcon._anchor = anchor
+            classifyIcon._anchor = positionKey
         end
 
         classifyIcon:Show()
@@ -5437,7 +5544,7 @@ function ns:FullPlateUpdate(myPlate, unit)
         if ns.c_nameInHealthbar then
             myPlate.nameText:SetParent(myPlate.hp)
             myPlate.nameText:SetDrawLayer("OVERLAY", 7)
-            PixelUtil.SetPoint(myPlate.nameText, "LEFT", myPlate.hp, "LEFT", 4, 0, 1, 1)
+            PixelUtil.SetPoint(myPlate.nameText, "LEFT", myPlate.hp, "LEFT", 4, ns.c_nameTextYOffset, 1, 1)
             myPlate.nameText:SetJustifyH("LEFT")
             myPlate.nameText:SetWidth(ns.c_width * 0.6)
             myPlate.nameText:SetWordWrap(false)
@@ -5445,12 +5552,13 @@ function ns:FullPlateUpdate(myPlate, unit)
         else
             myPlate.nameText:SetParent(myPlate)
             myPlate.nameText:SetDrawLayer("OVERLAY")
-            PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", myPlate.hp, "TOP", 0, 3, 1, 1)
+            PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", myPlate.hp, "TOP", 0, 2 + ns.c_nameTextYOffset, 1, 1)
             myPlate.nameText:SetJustifyH("CENTER")
             myPlate.nameText:SetWidth(0)
             myPlate.nameText:SetWordWrap(true)
         end
         myPlate._lastNameInHealthbar = ns.c_nameInHealthbar
+        myPlate._lastNameTextYOffset = ns.c_nameTextYOffset
         -- Re-anchor castbar to hp (totem fallback may have anchored to myPlate:BOTTOM)
         if myPlate.castbar then
             myPlate.castbar:ClearAllPoints()
@@ -5470,12 +5578,12 @@ function ns:FullPlateUpdate(myPlate, unit)
 
     -- Enforce nameText parent/anchor every FullPlateUpdate (plate may have been recycled
     -- from personal bar, totem, or another state that moved nameText)
-    if myPlate._lastNameInHealthbar ~= ns.c_nameInHealthbar then
+    if myPlate._lastNameInHealthbar ~= ns.c_nameInHealthbar or myPlate._lastNameTextYOffset ~= ns.c_nameTextYOffset then
         myPlate.nameText:ClearAllPoints()
         if ns.c_nameInHealthbar then
             myPlate.nameText:SetParent(myPlate.hp)
             myPlate.nameText:SetDrawLayer("OVERLAY", 7)
-            PixelUtil.SetPoint(myPlate.nameText, "LEFT", myPlate.hp, "LEFT", 4, 0, 1, 1)
+            PixelUtil.SetPoint(myPlate.nameText, "LEFT", myPlate.hp, "LEFT", 4, ns.c_nameTextYOffset, 1, 1)
             myPlate.nameText:SetJustifyH("LEFT")
             myPlate.nameText:SetWidth(ns.c_width * 0.6)
             myPlate.nameText:SetWordWrap(false)
@@ -5483,12 +5591,13 @@ function ns:FullPlateUpdate(myPlate, unit)
         else
             myPlate.nameText:SetParent(myPlate)
             myPlate.nameText:SetDrawLayer("OVERLAY")
-            PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", myPlate.hp, "TOP", 0, 3, 1, 1)
+            PixelUtil.SetPoint(myPlate.nameText, "BOTTOM", myPlate.hp, "TOP", 0, 2 + ns.c_nameTextYOffset, 1, 1)
             myPlate.nameText:SetJustifyH("CENTER")
             myPlate.nameText:SetWidth(0)
             myPlate.nameText:SetWordWrap(true)
         end
         myPlate._lastNameInHealthbar = ns.c_nameInHealthbar
+        myPlate._lastNameTextYOffset = ns.c_nameTextYOffset
         -- Also fix healthText alignment
         if myPlate.healthText then
             myPlate.healthText:ClearAllPoints()
@@ -5542,7 +5651,7 @@ function ns:FullPlateUpdate(myPlate, unit)
     UpdateLevelText(unit)
 
     -- Classification indicator (elite/rare/boss)
-    UpdateClassificationIndicator(unit)
+    ns.UpdateClassificationIndicator(unit)
 
     -- Quest objective icon
     UpdateQuestIcon(unit)
@@ -5627,8 +5736,8 @@ function ns:CreatePlateFrame(parentFrame, unit)
     myPlate.guildText = guildText
 
     -- Apply font styles (using cached values)
-    nameText:SetFont(ns.c_font, ns.c_fontSize, ns.c_fontOutline)
-    guildText:SetFont(ns.c_font, math_max(ns.c_fontSize - 2, 8), ns.c_fontOutline)
+    ns:SetFontSafe(nameText, ns.c_font, ns.c_fontSize, ns.c_fontOutline)
+    ns:SetFontSafe(guildText, ns.c_font, math_max(ns.c_fontSize - 2, 8), ns.c_fontOutline)
 
     -- Create aura containers (defined in Auras.lua)
     if ns.CreateAuraContainers then
@@ -5882,12 +5991,18 @@ eventFrame:SetScript("OnEvent", function(self, event, unit)
         if UnitExists("mouseover") then
             local mouseoverPlate = C_NamePlate_GetNamePlateForUnit("mouseover")
             if mouseoverPlate and mouseoverPlate._unit then
-                local myPlate = ns.unitToPlate[mouseoverPlate._unit]
-                -- Skip highlight on personal plate (player doesn't need to highlight themselves)
-                if myPlate and myPlate.highlight and not myPlate.isPlayer then
-                    myPlate.highlight.unit = mouseoverPlate._unit  -- Track which unit this is
-                    myPlate.highlight.elapsed = 0  -- Reset timer
-                    myPlate.highlight:Show()  -- OnUpdate will auto-hide when mouse leaves
+                local mouseoverUnit = mouseoverPlate._unit
+                if mouseoverPlate._isLite and ns.ShowLiteNameHighlight then
+                    ns.ShowLiteNameHighlight(mouseoverPlate, mouseoverUnit)
+                else
+                    local myPlate = ns.unitToPlate[mouseoverUnit]
+                    -- Skip highlight on personal plate (player doesn't need to highlight themselves)
+                    if myPlate and myPlate.highlight and not myPlate.isPlayer then
+                        ApplyMouseoverGlowColor(myPlate.highlight)
+                        myPlate.highlight.unit = mouseoverUnit  -- Track which unit this is
+                        myPlate.highlight.elapsed = 0  -- Reset timer
+                        myPlate.highlight:Show()  -- OnUpdate will auto-hide when mouse leaves
+                    end
                 end
             end
         end

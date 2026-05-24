@@ -837,7 +837,7 @@ local function CreateTurboDebuffFrame(myPlate)
     frame.timer:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
     local font = ns.c_font or "Fonts\\FRIZQT__.TTF"
     local timerSize = cfg.timerSize or (size / 2.5)
-    frame.timer:SetFont(font, timerSize, "OUTLINE")
+    ns:SetFontSafe(frame.timer, font, timerSize, "OUTLINE")
     frame.timer:SetTextColor(1, 1, 1)
     frame.timer:SetJustifyH("CENTER")
     frame.timer:SetJustifyV("MIDDLE")
@@ -940,7 +940,7 @@ local function UpdateTurboDebuff(myPlate, unit)
         -- Update timer font size (cached to avoid redundant calls)
         local font = ns.c_font or "Fonts\\FRIZQT__.TTF"
         if frame.cachedFont ~= font or frame.cachedFontSize ~= timerSize then
-            frame.timer:SetFont(font, timerSize, "OUTLINE")
+            ns:SetFontSafe(frame.timer, font, timerSize, "OUTLINE")
             frame.cachedFont = font
             frame.cachedFontSize = timerSize
         end
@@ -1069,7 +1069,7 @@ local function UpdateLiteTurboDebuff(nameplate, unit)
         -- Update timer font size (cached)
         local font = ns.c_font or "Fonts\\FRIZQT__.TTF"
         if frame.cachedFont ~= font or frame.cachedFontSize ~= timerSize then
-            frame.timer:SetFont(font, timerSize, "OUTLINE")
+            ns:SetFontSafe(frame.timer, font, timerSize, "OUTLINE")
             frame.cachedFont = font
             frame.cachedFontSize = timerSize
         end

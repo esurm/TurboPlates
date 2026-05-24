@@ -3,9 +3,37 @@ local addonName, ns = ...
 -- Get version from TOC file
 local version = GetAddOnMetadata(addonName, "Version") or "1.0.0"
 
+local function NormalizeLanguage(language)
+    if language == "zhCN" or language == "zhTW" then return "zhCN" end
+    if language == "frFR" then return "frFR" end
+    if language == "esES" or language == "esMX" then return "esES" end
+    if language == "deDE" then return "deDE" end
+    if language == "enUS" or language == "enGB" then return "enUS" end
+end
+
+function ns:GetClientLanguage()
+    return NormalizeLanguage(GetLocale()) or "enUS"
+end
+
+function ns:GetActiveLanguage()
+    local savedLanguage = TurboPlatesDB and NormalizeLanguage(TurboPlatesDB.language)
+    return savedLanguage or self:GetClientLanguage()
+end
+
+function ns:ShouldUseLocale(language)
+    return self:GetActiveLanguage() == NormalizeLanguage(language)
+end
+
 ns.L = {
     Title = "TurboPlates v" .. version,
     Author = "Author: surm",
+    Language = "Language",
+    LanguageEnglish = "English",
+    LanguageChinese = "Simplified Chinese",
+    LanguageFrench = "French",
+    LanguageSpanish = "Spanish",
+    LanguageGerman = "German",
+    LanguageReloadPrompt = "Changing language requires a UI reload. Reload now?",
 
     TabGeneral = "General",
     TabStyle = "Nameplate Style",
@@ -36,13 +64,17 @@ ns.L = {
     PersonalBarBorderDebuffOnly = "No Borders Unless Debuff",
     PersonalBarBorderBlack = "Default Black",
     PersonalBarYOffset = "Vertical Offset",
+    PersonalBarBuffXOffset = "Buffs X Position",
+    PersonalBarBuffYOffset = "Buffs Y Position",
+    PersonalBarDebuffXOffset = "Debuffs X Position",
+    PersonalBarDebuffYOffset = "Debuffs Y Position",
     PersonalBarHealthColor = "Health Bar Color",
 
     PersonalBarPowerColorByType = "Color Power by Type",
     PersonalBarShowAdditionalPower = "Show Mana When Shapeshifted",
     PersonalBarAdditionalPowerHeight = "Additional Power Height",
     HeroPowerOrder = "Power Bar Order",
-    TabObjectives = "Quest Objectives",
+    TabObjectives = "Mob Indicators",
     TabMisc = "Misc Options",
     TabStacking = "Plate Stacking",
     TabProfiles = "Profiles",
@@ -75,6 +107,7 @@ ns.L = {
     StackingPresetChill = "Chill",
     StackingPresetSnappy = "Snappy",
     StackingPresetReloadPrompt = "Changing preset requires a UI reload. Reload now?",
+    StackingClickboxNote = "Note: Stacking offsets are based on Clickable Nameplate Size values (under Misc tab)",
     -- Spring Physics
     StackingSpringHeader = "Animation Speed:",
     StackingSpringRaise = "Rise Speed",
@@ -99,6 +132,7 @@ ns.L = {
     NonTargetAlphaDesc = "Opacity of non-targeted nameplates when you have a target (0% = invisible, 100% = fully visible)",
 
     -- Potato PC Mode
+    PerformanceHeader = "Performance:",
     PotatoPCMode = "Potato PC Mode",
     PotatoPCModeDesc = "Reduces CPU usage by halving update frequencies. Recommended for older or slow PCs.",
 
@@ -228,8 +262,12 @@ ns.L = {
     ClassColoredName = "Class Colored Name",
     ArenaNumbers = "Arena: Show Arena Numbers",
     HealerMarks = "Arena/BG: Healer Icons",
-    TargetingMeIndicator = "Arena: Targeting Me Indicator",
-    TargetingMeColor = "(Arena) Targeting Me",
+    HealerMarksDisabled = "Disabled",
+    HealerMarksEnemiesOnly = "Enemies Only",
+    HealerMarksFriendlyOnly = "Friendly Only",
+    HealerMarksBoth = "Both",
+    TargetingMeIndicator = "Targeting Me",
+    TargetingMeColor = "Targeting Me",
 
     -- Quest Objectives
     ShowQuestNPCs = "Show Quest NPCs",
@@ -238,6 +276,11 @@ ns.L = {
     QuestIconAnchor = "Quest Icon Anchor",
     QuestIconX = "Icon X Offset",
     QuestIconY = "Icon Y Offset",
+    EliteBossIndicator = "Elite/Boss Indicator",
+    EliteBossIconAnchor = "Elite/Boss Anchor",
+    EliteBossIconX = "Elite/Boss X Offset",
+    EliteBossIconY = "Elite/Boss Y Offset",
+    EliteBossIconSize = "Elite/Boss Size",
 
     Width = "Nameplate Width",
     HpHeight = "Healthbar Height",
@@ -249,6 +292,9 @@ ns.L = {
     FriendlyScale = "Friendly Nameplate Scale",
     RaidMarkerSize = "Raid Marker Size",
     RaidMarkerAnchor = "Raid Marker Anchor",
+    RaidMarkerAnchorLeft = "Left",
+    RaidMarkerAnchorRight = "Right",
+    RaidMarkerAnchorTop = "Top (Above Name)",
     RaidMarkerX = "Raid Marker X",
     RaidMarkerY = "Raid Marker Y",
     Texture = "Bar Texture",
@@ -285,6 +331,7 @@ ns.L = {
 
     Font = "Font",
     FontSize = "Nameplate Name Size",
+    NameTextYOffset = "Nameplate Name Y Offset",
     FontOutline = "Font Outline",
     NameDisplayFormat = "Name Display Format",
 
@@ -315,6 +362,7 @@ ns.L = {
     TargetGlow = "Target Glow",
     TargetArrow = "Target Arrow",
     TargetGlowColor = "Target Glow",
+    MouseoverGlowColor = "Mouseover Glow",
     ClickableAreaHeader = "Nameplate Clickable Area Settings:",
     ClickableWidth = "Clickable Width",
     ClickableHeight = "Clickable Height",
@@ -328,16 +376,6 @@ ns.L = {
     LevelSize = "Size",
     LevelX = "X Position",
     LevelY = "Y Position",
-
-    -- Classification Icon
-    ClassificationAnchor = "Classification Icon",
-    ClassificationDisabled = "Disabled",
-    ClassificationTopLeft = "Top Left",
-    ClassificationTopRight = "Top Right",
-    ClassificationTop = "Top",
-    ClassificationBottom = "Bottom",
-    ClassificationBottomLeft = "Bottom Left",
-    ClassificationBottomRight = "Bottom Right",
 
     -- Threat Text
     ThreatTextAnchor = "Threat Text Display",
@@ -369,10 +407,72 @@ ns.L = {
     Reload = "Right Click: Reload UI"
 }
 
+local defaultLocale = {}
+for k, v in pairs(ns.L) do
+    defaultLocale[k] = v
+end
+
+ns.locales = {}
+ns.localePostApply = {}
+
+function ns:NewLocale(language)
+    local normalizedLanguage = NormalizeLanguage(language)
+    local locale = {}
+    if normalizedLanguage then
+        self.locales[normalizedLanguage] = locale
+    end
+    return locale
+end
+
+function ns:RegisterLocalePostApply(language, callback)
+    local normalizedLanguage = NormalizeLanguage(language)
+    if normalizedLanguage and type(callback) == "function" then
+        self.localePostApply[normalizedLanguage] = callback
+    end
+end
+
+function ns:ApplyActiveLocale()
+    local activeLanguage = self:GetActiveLanguage()
+    local locale = self.locales[activeLanguage] or self.locales.enUS
+
+    for k, v in pairs(defaultLocale) do
+        self.L[k] = v
+    end
+
+    if locale then
+        for k, v in pairs(locale) do
+            self.L[k] = v
+        end
+    end
+
+    local postApply = self.localePostApply[activeLanguage]
+    if postApply then
+        postApply()
+    end
+
+    if self.RefreshLocalizedStaticPopups then
+        self:RefreshLocalizedStaticPopups()
+    end
+end
+
+ns.CJK_FONT_NAME = "Noto Sans CJK SC"
+ns.CJK_FONT_PATH = "Interface\\AddOns\\TurboPlates\\Fonts\\NotoSansSC-Regular.ttf"
+
+ns.DEFAULT_FONT_PATH = "Interface\\AddOns\\TurboPlates\\Fonts\\FRIZQT__.TTF"
+
+function ns:SetFontSafe(fontString, fontPath, size, outline)
+    if not fontString then return end
+    fontString:SetFont(fontPath or self.DEFAULT_FONT_PATH, size, outline or "")
+    if not fontString:GetFont() then
+        fontString:SetFont(self.DEFAULT_FONT_PATH, size, outline or "")
+    end
+end
+
 ns.Fonts = {
     -- Default WoW Fonts
     { name = "Friz Quadrata",         path = "Interface\\AddOns\\TurboPlates\\Fonts\\FRIZQT__.TTF" },
     { name = "Arial Narrow",          path = "Interface\\AddOns\\TurboPlates\\Fonts\\ARIALN.TTF" },
+    { name = "Noto Sans CJK SC",      path = ns.CJK_FONT_PATH },
     { name = "Morpheus",              path = "Fonts\\MORPHEUS.TTF" },
     { name = "Skurri",                path = "Fonts\\SKURRI.TTF" },
     -- TurboPlates Fonts
@@ -426,6 +526,25 @@ ns.QuestIconAnchors = {
     { name = "Left", value = "LEFT" },
     { name = "Right", value = "RIGHT" },
     { name = "Top", value = "TOP" },
+}
+ns.EliteBossIconAnchors = {
+    { name = "Top Left", value = "TOPLEFT" },
+    { name = "Top", value = "TOP" },
+    { name = "Top Right", value = "TOPRIGHT" },
+    { name = "Left", value = "LEFT" },
+    { name = "Right", value = "RIGHT" },
+    { name = "Bottom Left", value = "BOTTOMLEFT" },
+    { name = "Bottom", value = "BOTTOM" },
+    { name = "Bottom Right", value = "BOTTOMRIGHT" },
+}
+ns.EliteBossIndicatorStyles = {
+    { name = "None", value = "none" },
+    { name = "Default", value = "default", preview = { atlas = "dungeonskull", w = 14, h = 14 } },
+    { name = "Colored Skulls", value = "colored_skulls", preview = { texture = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\ElvUI_SkullIcon.tga", w = 22, h = 24, coords = { 0.078125, 0.9375, 0.03125, 0.96875 }, color = { 1, 0.05, 0.05 } } },
+    { name = "ElvUI Dragons", value = "elvui_dragons", preview = { texture = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\ElvUI_Nameplates.blp", w = 31, h = 24, coords = { 0, 0.15234375, 0.359375, 0.59375 } } },
+    { name = "SRE - Classic", value = "sre_classic", preview = { texture = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\SRE\\classic\\worldboss.tga", w = 39, h = 20, coords = { 0.00390625, 0.76171875, 0, 0.7734375 } } },
+    { name = "SRE - Modern", value = "sre_modern", preview = { texture = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\SRE\\modern\\worldboss.tga", w = 30, h = 24, coords = { 0, 0.96875, 0, 0.78125 } } },
+    { name = "SRE - Tiny", value = "sre_tiny", preview = { texture = "Interface\\AddOns\\TurboPlates\\Textures\\EliteIcons\\SRE\\tiny\\worldboss.tga", w = 33, h = 22, coords = { 0.0078125, 0.96875, 0, 0.6484375 } } },
 }
 ns.HealthFormats = {
     { name = "None", value = "none" },
@@ -552,6 +671,7 @@ ns.defaults = {
     guildFontSize = 9,
     healthValueFormat = "percent",  -- Health value display format
     healthValueFontSize = 8,     -- Health value font size
+    nameTextYOffset = 0,         -- User-adjustable name text vertical offset
     nameInHealthbar = false,     -- Show name inside healthbar (left) with health value (right)
     hidePercentWhenFull = false,  -- Hide percent display when at full health (disabled by default)
     totemDisplay = "icon_name",   -- Totem display mode: disabled, hp_name, icon_only, icon_name, icon_hp, icon_name_hp
@@ -560,6 +680,7 @@ ns.defaults = {
     targetGlow = "border",  -- Target glow style: none, border, thick, thin
     targetArrow = "none",   -- Target arrow style: none, arrows_thin, arrows_normal, arrows_double
     targetGlowColor = { r = 0, g = 1, b = 1 },  -- Neon cyan
+    mouseoverGlowColor = { r = 1, g = 1, b = 1 },  -- White mouseover glow by default
     tappedColor = { r = 0.5, g = 0.5, b = 0.5 },  -- Grey for tapped units
     -- Quest objective icons
     showQuestNPCs = true,       -- Show quest pickup/turnin icons
@@ -582,8 +703,12 @@ ns.defaults = {
     nonTargetAlpha = 0.6,   -- Manual alpha for non-targeted nameplates (0-1)
     -- Level indicator
     levelMode = "all",  -- disabled, enemies, all
-    -- Classification icon
-    classificationAnchor = "TOPLEFT",  -- disabled, TOPLEFT, TOPRIGHT, TOP, BOTTOM, BOTTOMLEFT, BOTTOMRIGHT
+    -- Elite/Boss classification icon
+    classificationStyle = "default",  -- none, default, colored_skulls, elvui_dragons, sre_classic, sre_modern, sre_tiny
+    classificationAnchor = "TOPLEFT", -- TOPLEFT, TOP, TOPRIGHT, LEFT, RIGHT, BOTTOMLEFT, BOTTOM, BOTTOMRIGHT
+    classificationX = 0,
+    classificationY = 0,
+    classificationSize = 18,
 
     -- Threat text display
     threatTextAnchor = "disabled",  -- disabled, right_hp, left_hp, below_hp, top_hp, left_name, right_name
@@ -749,6 +874,14 @@ end
 function ns:LoadVariables()
     if not TurboPlatesDB then TurboPlatesDB = {} end
 
+    if TurboPlatesDB.language ~= nil then
+        TurboPlatesDB.language = NormalizeLanguage(TurboPlatesDB.language)
+    end
+
+    if ns.ApplyActiveLocale then
+        ns:ApplyActiveLocale()
+    end
+
     for k, v in pairs(ns.defaults) do
         if TurboPlatesDB[k] == nil then
             TurboPlatesDB[k] = DeepCopy(v)
@@ -759,6 +892,11 @@ function ns:LoadVariables()
                 end
             end
         end
+    end
+
+    -- Migrate the previous temporary default now that the base name position is corrected.
+    if TurboPlatesDB.nameTextYOffset == -1 then
+        TurboPlatesDB.nameTextYOffset = ns.defaults.nameTextYOffset
     end
 
     -- Migrate font from path to LSM name
@@ -792,6 +930,41 @@ function ns:LoadVariables()
     -- Validate texture (now LSM name)
     if not TurboPlatesDB.texture or TurboPlatesDB.texture == "" then
         TurboPlatesDB.texture = ns.defaults.texture
+    end
+
+    -- Restore the old default placement after the initial Mob Indicators build briefly collapsed it to LEFT.
+    if TurboPlatesDB._eliteBossAnchorMigration ~= 1 then
+        if TurboPlatesDB.classificationAnchor == "LEFT"
+            and (TurboPlatesDB.classificationX or 0) == 0
+            and (TurboPlatesDB.classificationY or 0) == 0 then
+            TurboPlatesDB.classificationAnchor = ns.defaults.classificationAnchor
+        end
+        TurboPlatesDB._eliteBossAnchorMigration = 1
+    end
+
+    -- Migrate/validate classification anchors for the Mob Indicators controls
+    if TurboPlatesDB.classificationAnchor == "disabled" then
+        TurboPlatesDB.classificationStyle = "none"
+        TurboPlatesDB.classificationAnchor = ns.defaults.classificationAnchor
+    elseif TurboPlatesDB.classificationAnchor ~= "TOPLEFT"
+        and TurboPlatesDB.classificationAnchor ~= "TOP"
+        and TurboPlatesDB.classificationAnchor ~= "TOPRIGHT"
+        and TurboPlatesDB.classificationAnchor ~= "LEFT"
+        and TurboPlatesDB.classificationAnchor ~= "RIGHT"
+        and TurboPlatesDB.classificationAnchor ~= "BOTTOMLEFT"
+        and TurboPlatesDB.classificationAnchor ~= "BOTTOM"
+        and TurboPlatesDB.classificationAnchor ~= "BOTTOMRIGHT" then
+        TurboPlatesDB.classificationAnchor = ns.defaults.classificationAnchor
+    end
+
+    if TurboPlatesDB.classificationStyle ~= "none"
+        and TurboPlatesDB.classificationStyle ~= "default"
+        and TurboPlatesDB.classificationStyle ~= "colored_skulls"
+        and TurboPlatesDB.classificationStyle ~= "elvui_dragons"
+        and TurboPlatesDB.classificationStyle ~= "sre_classic"
+        and TurboPlatesDB.classificationStyle ~= "sre_modern"
+        and TurboPlatesDB.classificationStyle ~= "sre_tiny" then
+        TurboPlatesDB.classificationStyle = ns.defaults.classificationStyle
     end
 
     -- Validate color tables
@@ -842,6 +1015,9 @@ function ns:LoadVariables()
     end
     if type(TurboPlatesDB.targetingMeColor) ~= "table" or not TurboPlatesDB.targetingMeColor.r then
         TurboPlatesDB.targetingMeColor = DeepCopy(ns.defaults.targetingMeColor)
+    end
+    if type(TurboPlatesDB.mouseoverGlowColor) ~= "table" or not TurboPlatesDB.mouseoverGlowColor.r then
+        TurboPlatesDB.mouseoverGlowColor = DeepCopy(ns.defaults.mouseoverGlowColor)
     end
     if type(TurboPlatesDB.highlightGlowColor) ~= "table" or not TurboPlatesDB.highlightGlowColor.r then
         TurboPlatesDB.highlightGlowColor = DeepCopy(ns.defaults.highlightGlowColor)
