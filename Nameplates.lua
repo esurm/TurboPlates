@@ -4821,6 +4821,9 @@ local Quest = {
     retryState = {},  -- Key = unit string, Value = { token, attempt }
     MAX_RETRIES = 4,
     RETRY_DELAYS = { 0.15, 0.3, 0.6, 1.2 },  -- Exponential backoff
+    IsObjectiveStatus = function(status)
+        return status == "collect" or status == "objective"
+    end,
 }
 
 -- Update quest objective icon for a unit (full plates)
@@ -4913,9 +4916,14 @@ local function UpdateQuestIcon(unit)
         if not atlas and QuestUtil and QuestUtil.GetQuestStatusIcon then
             atlas, desaturate = QuestUtil.GetQuestStatusIcon(questStatus)
         end
-    -- Check for quest objective (kill/collect)
+    -- Quest status can also represent pickup/turnin/trivial NPC icons when talkToMe is empty.
     elseif questStatus then
-        if not ns.c_showQuestObjectives then
+        if Quest.IsObjectiveStatus(questStatus) then
+            if not ns.c_showQuestObjectives then
+                if myPlate.questIcon then myPlate.questIcon:Hide() end
+                return
+            end
+        elseif not ns.c_showQuestNPCs then
             if myPlate.questIcon then myPlate.questIcon:Hide() end
             return
         end
@@ -5024,7 +5032,12 @@ local function UpdateLiteQuestIcon(nameplate, unit)
             atlas, desaturate = QuestUtil.GetQuestStatusIcon(questStatus)
         end
     elseif questStatus then
-        if not ns.c_showQuestObjectives then
+        if Quest.IsObjectiveStatus(questStatus) then
+            if not ns.c_showQuestObjectives then
+                if nameplate.liteQuestIcon then nameplate.liteQuestIcon:Hide() end
+                return
+            end
+        elseif not ns.c_showQuestNPCs then
             if nameplate.liteQuestIcon then nameplate.liteQuestIcon:Hide() end
             return
         end
