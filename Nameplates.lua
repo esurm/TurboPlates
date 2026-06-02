@@ -3565,6 +3565,7 @@ local TANK_AURAS = {
     [1182001] = true,  -- Shaman tank buff
     [1109634] = true,  -- Druid Bear Form
     [1125780] = true,  -- Paladin Righteous Fury
+    [1154321] = true,  -- Dark Apotheosis
 }
 
 -- Vigilance spell ID - cast BY warrior tank ON party member
