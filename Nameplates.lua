@@ -787,50 +787,29 @@ local function ScheduleArenaNumberRefresh()
     arenaRefreshTimer = C_Timer_After(0.5, DoRefresh)
 end
 
--- Totem SpellID lookup table - Ascension totem spell IDs
--- Bronzebeard server uses 11xxxxx format, other servers use standard WoW IDs
-local TotemSpellIDs = {
-    -- Fire Totems
-    [2894] = true,  [1102894] = true,  -- Fire Elemental Totem
-    [8190] = true,  [1108190] = true, [10585] = true, [1110585] = true, [10586] = true, [1110586] = true, [10587] = true, [1110587] = true,  -- Magma Totem
-    [3599] = true,  [1103599] = true, [6363] = true, [1106363] = true, [6364] = true, [1106364] = true, [6365] = true, [1106365] = true, [10437] = true, [1110437] = true, [10438] = true, [1110438] = true,  -- Searing Totem
-    [8184] = true,  [1108184] = true, [10537] = true, [1110537] = true, [10538] = true, [1110538] = true,  -- Fire Resistance Totem
-    [8227] = true,  [1108227] = true, [8249] = true, [1108249] = true, [10526] = true, [1110526] = true, [16387] = true, [1116387] = true,  -- Flametongue Totem
-    -- Earth Totems
-    [2484] = true,  [1102484] = true,  -- Earthbind Totem
-    [5730] = true,  [1105730] = true, [6390] = true, [1106390] = true, [6391] = true, [1106391] = true, [6392] = true, [1106392] = true, [10427] = true, [1110427] = true, [10428] = true, [110428] = true,  -- Stoneclaw Totem
-    [2062] = true,  [1102062] = true,  -- Earth Elemental Totem
-    [8071] = true,  [1108071] = true, [8154] = true, [1108154] = true, [8155] = true, [1108155] = true, [10406] = true, [1110406] = true, [10407] = true, [1110407] = true, [10408] = true, [1110408] = true,  -- Stoneskin Totem
-    [8075] = true,  [1108075] = true, [8160] = true, [1108160] = true, [8161] = true, [1108161] = true, [10442] = true, [1110442] = true, [25361] = true, [1125361] = true,  -- Strength of Earth Totem
-    [8143] = true,  [1108143] = true,  -- Tremor Totem
-    -- Water Totems
-    [8170] = true,  [1108170] = true,  -- Cleansing Totem
-    [5394] = true,  [1105394] = true, [6375] = true, [1106375] = true, [6377] = true, [1106377] = true, [10462] = true, [1110462] = true, [10463] = true, [1110463] = true,  -- Healing Stream Totem
-    [5675] = true,  [1105675] = true, [10495] = true, [1110495] = true, [10496] = true, [1110496] = true, [10497] = true, [1110497] = true,  -- Mana Spring Totem
-    [8181] = true,  [1108181] = true, [10478] = true, [1110478] = true, [10479] = true, [1110479] = true,  -- Frost Resistance Totem
-    [10595] = true, [1110595] = true, [10600] = true, [1110600] = true, [10601] = true, [1110601] = true,  -- Nature Resistance Totem
-    -- Air Totems
-    [3738] = true,  [1103738] = true,  -- Wrath of Air Totem
-    [8177] = true,  [1108177] = true,  -- Grounding Totem
-    -- Other Totems
-    [30706] = true, [1130706] = true, [57720] = true, [1157720] = true,  -- Totem of Wrath
-    [16190] = true, [1116190] = true,  -- Mana Tide Totem
-    [2304590] = true,  -- Capacitor Totem
-}
+-- Totem SpellID lookup table - now in ServerData.lua
+local TotemSpellIDs = ns.ServerData.Active.TotemIDs
 
--- Name -> icon lookup (built at load time)
+-- Name -> icon lookup (built at init via BuildTotemNameToIcon)
 local TotemNameToIcon = {}
-for spellID in pairs(TotemSpellIDs) do
-    local name, _, icon = GetSpellInfo(spellID)
-    if name and icon then
-        TotemNameToIcon[name] = icon
+
+function ns.BuildTotemNameToIcon()
+    wipe(TotemNameToIcon)
+    for spellID in pairs(TotemSpellIDs) do
+        local name, _, icon = GetSpellInfo(spellID)
+        if name and icon then
+            TotemNameToIcon[name] = icon
+        end
+    end
+
+    -- Manual icon overrides for totems where GetSpellInfo doesn't work
+    -- Uses active server's Capacitor Totem ID (2304590 for Bronzebeard)
+    local capID = 2304590
+    if TotemSpellIDs[capID] then
+        TotemNameToIcon["Capacitor Totem"] = GetSpellInfo(capID) and select(3, GetSpellInfo(capID))
+            or "Interface\\Icons\\Spell_Nature_Lightning"
     end
 end
-
--- Manual icon overrides for totems where GetSpellInfo doesn't work
--- (Ascension custom totems or totems with mismatched spell/unit names)
-TotemNameToIcon["Capacitor Totem"] = GetSpellInfo(2304590) and select(3, GetSpellInfo(2304590))
-    or "Interface\\Icons\\Spell_Nature_Lightning"
 
 -- Fallback icon for unknown totems
 local TOTEM_FALLBACK_ICON = "Interface\\Icons\\Spell_Nature_StoneClawTotem"
@@ -3559,16 +3538,11 @@ local group = {
     playerIsTank = false,
 }
 
--- Tank aura spell IDs for Ascension (Level 60 custom)
--- Used when LFG roles aren't available (manual groups)
-local TANK_AURAS = {
-    [1182001] = true,  -- Shaman tank buff
-    [1109634] = true,  -- Druid Bear Form
-    [1125780] = true,  -- Paladin Righteous Fury
-}
+-- Tank aura spell IDs - now in ServerData.lua
+local TANK_AURAS = ns.ServerData.Active.TankAuras
 
--- Vigilance spell ID - cast BY warrior tank ON party member
-local VIGILANCE_SPELL_ID = 1150720
+-- Vigilance spell ID - now in ServerData.lua
+local VIGILANCE_SPELL_ID = ns.ServerData.Active.VigilanceID
 
 -- Vigilance caster cache
 local cachedVigilanceCaster = nil

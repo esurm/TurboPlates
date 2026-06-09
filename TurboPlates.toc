@@ -19,6 +19,8 @@ Locales\frFR.lua
 Locales\esES.lua
 Locales\deDE.lua
 SharedMedia.lua
+ServerData.lua
+CoA.lua
 ImportExport.lua
 TurboDebuffs.lua
 Core.lua

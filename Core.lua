@@ -637,6 +637,21 @@ Core:SetScript("OnEvent", function(self, event, ...)
             ns.UpdateStacking()
         end
 
+        -- Initialize server-specific data (must run before anything uses Active tables)
+        if ns.ServerData and ns.ServerData.Init then
+            ns.ServerData:Init()
+        end
+
+        -- Setup class colors for CoA (use HERO class for all classes)
+        if ns.CoA and ns.CoA.active then
+            ns.CoA:SetupClassColors()
+        end
+
+        -- Build TotemNameToIcon from active server's totem IDs
+        if ns.BuildTotemNameToIcon then
+            ns.BuildTotemNameToIcon()
+        end
+
         -- Initialize TurboDebuffs (BigDebuffs-style priority aura)
         if ns.InitTurboDebuffs then
             ns:InitTurboDebuffs()
