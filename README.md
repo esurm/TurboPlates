@@ -1,6 +1,6 @@
 # TurboPlates
 
-Lightweight nameplate addon, built from scratch for WoW 3.3.5a (w/ Ascension API).
+Lightweight nameplate addon, built from scratch for WoW
 
 ## Features
 
